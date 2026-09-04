@@ -33,8 +33,8 @@ Everything ai-space owns on a machine lives in one directory, `~/.ai-space` by d
 ```bash
 bun install
 bun run init           # create ~/.ai-space (idempotent)
-bun run start          # boot the Space API on 127.0.0.1:8700
-bun run dev            # hot reload
+bun run start          # boot the Space API and the panel on 127.0.0.1:8700
+bun run dev            # hot reload, including the web UI
 bun run check          # typecheck + tests
 ```
 
@@ -60,7 +60,8 @@ See [docs/app-spec.md](docs/app-spec.md) for the app specification (what an app 
 - **Scheduler** (`src/space/scheduler/`) - scheduled tasks for apps: `at` / `every` / `cron` schedules, `http` / `command` / `agent` targets, declared in each app's `space.yaml` and managed through `/api/tasks`. See [docs/scheduler.md](docs/scheduler.md).
 - **Storage** (`src/space/storage/`) - per-app databases on SQLite or PostgreSQL and a per-app blob store on the filesystem or any S3-compatible bucket, declared in `space.yaml`, provisioned on sync and handed over through `<workspace>/data/<app>/space.env` (`DATABASE_URL`, `BLOB_URL`, `S3_*`). The managed blob API and backups from the design are not implemented yet. See [docs/storage.md](docs/storage.md).
 - **Notify** (`src/space/notify/`) - one-way notifications to chat apps (Telegram, Discord, Slack, Feishu, DingTalk, WeCom, Bark, ntfy, generic webhook). Channels are configured once in the workspace `.env` as `SPACE_NOTIFY_<NAME>` URLs; apps declare which they may use in `space.yaml` and send one `POST /api/notify`. Deliveries are queued, rate limited, retried and recorded; the scheduler reports failing tasks through it. See [docs/notify.md](docs/notify.md).
+- **Panel** (`src/space/panel/`, `src/space/agents/`, `src/web/`) - the web entry at `/`: a launcher of every app in the workspace (icon, entry URL, health), a chat drawer that opens a Claude Code session as any declared agent or as the space agent, widget cards fed by the apps, and an edit mode to add an app from a link, hide or reorder. See [docs/panel.md](docs/panel.md).
 
 ## Status
 
-Early stage. The scheduler is the first Space service; the other layers above describe the target design and will be filled in module by module.
+Early stage. Scheduler, storage and the panel (with agent chat and widgets) are in place; service supervision, notifications and skills mounting follow module by module.

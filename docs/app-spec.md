@@ -4,7 +4,7 @@ This document is the contract between ai-space and the apps that run inside it. 
 
 Spec version: `1`. An app states the version it targets with `spec: 1` at the top of `space.yaml`. Breaking changes bump the number; ai-space keeps accepting older versions for at least one release.
 
-Status: the `tasks`, `storage` and `notify` sections, the workspace layout and the `space.env` hand-over are implemented. `agents`, `widgets`, `skills`, the JSON Schema, `validate` and `new-app` are specified here first and implemented next; the [status table](#implementation-status) at the end tracks it.
+Status: the `tasks`, `storage` and `notify` sections, the top-level identity fields, `agents` (chat), `widgets`, the panel, the workspace layout and the `space.env` hand-over are implemented. `service` supervision, `skills` mounting, the JSON Schema, `validate` and `new-app` are specified here first and implemented next; the [status table](#implementation-status) at the end tracks it.
 
 ## What an app is
 
@@ -18,11 +18,11 @@ An app is the unit of ownership in ai-space. It is one directory, one git reposi
 - **storage**: databases and blob stores ai-space provisions for the app;
 - **notify**: the chat channels the app may send notifications to.
 
-The model is the Android one: the app declares its widgets and agents, ships them in its own repository, and the space's web UI is the launcher that lists, places and routes them. Nothing in the space exists outside an app except the space's own services.
+The model is the Android one: the app declares its widgets and agents, ships them in its own repository, and the space's web UI is the launcher that lists, places and routes them. Nothing in the space exists outside an app except the space's own services and the space agent (`space/assistant`), the default chat identity that works in the workspace root; see [panel.md](panel.md).
 
 Six rules apply to every app:
 
-1. **One app, one repository.** The directory under `<workspace>/apps/` is a complete git repository that can be cloned, deployed and retired on its own. Apps never share files; shared things move down into ai-space (a Space service or a shared skill).
+1. **One app, one repository.** The directory under `<workspace>/apps/` is a complete git repository that can be cloned, deployed and retired on its own. Apps never share files; shared things move down into ai-space (a Space service or a shared skill). The one exception is a **manifest-only app**: a directory holding nothing but `space.yaml` and its icon, used to put a link (a page, a tool elsewhere, a repository) on the panel. It has no code, so it needs no repository; the panel creates and deletes these.
 2. **One name everywhere.** The app name is lowercase kebab-case (`[a-z0-9][a-z0-9._-]*`) and is the directory name, the repository name, the `name` in `space.yaml`, the systemd unit name and the data directory name. Pick it before creating anything; renaming touches all five.
 3. **Configuration is environment.** Secrets and machine-specific values come from `<workspace>/.env` (shared) and the app's own `.env` (ignored by git). The repository only ever holds `.env.example`. ai-space hands provisioned values over through `space.env`.
 4. **Listen on loopback.** A service binds `127.0.0.1` on the port given by `PORT`. Exposure to the outside is the space's job (tunnel, auth), never the app's.
@@ -68,7 +68,8 @@ spec: 1
 name: my-app                       # required; must match the directory name
 title: My App                      # display name; default: name
 description: One sentence saying what the app does.
-icon: icon.svg                     # path in the repo or an emoji; default: icon.svg if present
+icon: icon.svg                     # path in the repo, an emoji or an http(s) URL; default: icon.svg if present
+url: https://my-app.example.com    # public entry; the panel tile opens it
 status: active                     # active (default) | paused | archived
 repo: https://github.com/<owner>/my-app.git   # informative; set by new-app
 ```
@@ -79,7 +80,8 @@ repo: https://github.com/<owner>/my-app.git   # informative; set by new-app
 | `name` | string | App name, rule 2 above. Missing means the directory name. |
 | `title` | string | Shown on the panel. |
 | `description` | string | One sentence, shown on the panel card and to agents. |
-| `icon` | string | Repository path to an SVG or PNG, or a single emoji. |
+| `icon` | string | Repository path to an SVG or PNG, a single emoji, or an http(s) URL. |
+| `url` | string | Public entry URL. Widget and agent links are resolved relative to it. |
 | `status` | enum | `paused` keeps the app listed but stops its tasks and service; `archived` hides it and stops everything. Storage is never dropped by a status change. |
 | `repo` | string | The origin URL. |
 
@@ -110,7 +112,7 @@ Apps without a service (a pure agent app, a widget fed by a task) omit the secti
 
 ### `agents`
 
-An agent is a chat identity: a runtime session started in the app's directory with a system prompt, a tool allow-list and a set of skills. Declaring one costs no code. The panel lists every agent of every app and opens a chat with any of them.
+An agent is a chat identity: a runtime session started in the app's directory with a system prompt, a tool allow-list and a set of skills. Declaring one costs no code. The panel lists every agent of every app and opens a chat with any of them; chat is currently backed by the `claude` runtime only.
 
 ```yaml
 agents:
@@ -164,9 +166,9 @@ Contract for `kind: items`. `GET <source>` returns:
 { "ok": true, "items": [ { "text": "…", "url": "https://…", "time": "2026-09-04T09:00:00Z" } ] }
 ```
 
-`text` is required; `url` and `time` (ISO 8601) are optional and the panel renders relative time. On failure the app returns `{ "ok": false, "error": "…" }` and the panel shows the error as is. The panel fetches through ai-space (`/api/widgets`), caches for `refresh`, and only ever calls URLs that a manifest declares, so `source` may be a loopback address and is never sent to the browser.
+`text` is required; `url` and `time` (ISO 8601) are optional and the panel renders relative time. On failure the app returns `{ "ok": false, "error": "…" }` and the panel shows the error as is. The panel fetches through ai-space (`/api/widgets`), caches for `refresh`, and only ever calls URLs that a manifest declares, so `source` may be a loopback address and is never sent to the browser. A path `source` needs a `service` to attach to; an app without one gives a full URL.
 
-Contract for `kind: embed`. `source` is a page the app serves; the panel loads it in a sandboxed iframe of the declared size, in the viewer's theme (the page receives `?theme=light|dark`). The page must work without cookies and without a public origin.
+Contract for `kind: embed`. `source` is a page the app serves; the panel loads it in a sandboxed iframe of the declared size, in the viewer's theme (the page receives `?theme=light|dark`). ai-space proxies the page (`/api/widgets/:app/:name/embed`), so it must be self-contained: inline styles and scripts, or absolute public URLs. It must work without cookies and without a public origin.
 
 ### `skills`
 
@@ -318,9 +320,10 @@ API, for apps and their agents:
 | Route | Purpose |
 | --- | --- |
 | `GET /api/apps` | Every app with its status, agents and widgets. |
+| `POST /api/apps`, `PATCH`/`DELETE /api/apps/:app` | Create a manifest-only app, hide an app, delete a manifest-only app. |
 | `GET /api/tasks`, `POST /api/tasks/:id/run` | Inspect and trigger the app's own tasks. |
 | `GET /api/widgets` | Every widget's latest payload (used by the panel). |
-| `POST /api/agents/:app/:agent/chat` | Open or continue a chat session. |
+| `POST /api/agents/:app/:agent/chat` | One chat turn, streamed as server-sent events; `sessionId` continues a session. |
 | `POST /api/notify`, `GET /api/notifications?app` | Send a notification; read the app's own delivery history. |
 | `GET /api/spec` | The spec version and JSON Schema this ai-space enforces. |
 
@@ -382,10 +385,11 @@ notify:
 | `tasks` | Implemented (`src/space/scheduler/`) |
 | `storage` databases and blob hand-over | Implemented; managed blob API and backups pending |
 | `notify`, `/api/notify`, `SPACE_APP_TOKEN` | Implemented (`src/space/notify/`, `skills/notify/`) |
-| Top-level `spec`, `title`, `description`, `icon`, `status`, `repo` | Planned |
-| `service` | Planned |
-| `agents`, chat route | Planned |
-| `widgets`, `/api/widgets` | Planned |
+| Top-level `spec`, `title`, `description`, `icon`, `url`, `status`, `repo` | Implemented (`src/space/scheduler/manifest.ts`); `paused`/`archived` stop the app's tasks |
+| `service` | Parsed; health probed by the panel. Supervision (start, restart, logs, `PORT`) planned |
+| `agents`, chat route | Implemented for `claude` (`src/space/agents/`); `skills` and `memory` are parsed but not mounted yet |
+| `widgets`, `/api/widgets` | Implemented (`src/space/panel/`) |
+| Panel (web UI, layout, manifest-only apps) | Implemented ([panel.md](panel.md)) |
 | `skills`, shared skills under `skills/` | Planned |
 | JSON Schema (`schema/space.schema.json`), `validate`, `/api/spec` | Planned |
 | `templates/app/`, `new-app`, GitHub repository creation | Planned |
