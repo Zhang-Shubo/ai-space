@@ -36,7 +36,7 @@ English is the default language of this repository. Write code identifiers, comm
 - `src/space/scheduler/` - scheduled tasks: `types.ts` (data model), `schedule.ts` (at/every/cron next-run math), `store.ts` (bun:sqlite), `targets.ts` (http/command/agent runners), `manifest.ts` (`space.yaml` parsing), `scheduler.ts` (engine), `api.ts` (HTTP routes). Design notes in `docs/scheduler.md`.
 - `src/space/storage/` - per-app storage: `types.ts` (data model), `db.ts` (open by URL on Bun's `SQL`, migrations), `spec.ts` (`storage:` manifest section), `storage.ts` (database and blob store provisioning, inventory, `space.env`), `api.ts` (HTTP routes). Design notes in `docs/storage.md`.
 - `data/` - runtime data (SQLite), ignored by git.
-- `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README.
+- `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README. Service designs: `scheduler.md`, `storage.md`, `notify.md` (chat notifications, design only), and `app-spec.md` (the app contract).
 - `package.json` - scripts and dependencies; `bun.lock` is the lockfile.
 - `tsconfig.json` - TypeScript configuration (strict, bundler mode, noEmit).
 - `AGENTS.md` - this file, the agent working guide.

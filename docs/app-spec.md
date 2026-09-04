@@ -1,10 +1,10 @@
 # App specification
 
-This document is the contract between ai-space and the apps that run inside it. It says what an app is, how it is laid out, what it declares in `space.yaml`, and what ai-space promises in return. Everything an app author (human or agent) needs to build a conforming app is here; the service design notes ([scheduler](scheduler.md), [storage](storage.md)) explain how ai-space implements its side.
+This document is the contract between ai-space and the apps that run inside it. It says what an app is, how it is laid out, what it declares in `space.yaml`, and what ai-space promises in return. Everything an app author (human or agent) needs to build a conforming app is here; the service design notes ([scheduler](scheduler.md), [storage](storage.md), [notify](notify.md)) explain how ai-space implements its side.
 
 Spec version: `1`. An app states the version it targets with `spec: 1` at the top of `space.yaml`. Breaking changes bump the number; ai-space keeps accepting older versions for at least one release.
 
-Status: the `tasks` and `storage` sections, the workspace layout and the `space.env` hand-over are implemented. `agents`, `widgets`, `skills`, the JSON Schema, `validate` and `new-app` are specified here first and implemented next; the [status table](#implementation-status) at the end tracks it.
+Status: the `tasks` and `storage` sections, the workspace layout and the `space.env` hand-over are implemented. `agents`, `widgets`, `skills`, `notify`, the JSON Schema, `validate` and `new-app` are specified here first and implemented next; the [status table](#implementation-status) at the end tracks it.
 
 ## What an app is
 
@@ -15,7 +15,8 @@ An app is the unit of ownership in ai-space. It is one directory, one git reposi
 - **widgets** (zero or more): cards the home panel renders, fed by the app;
 - **skills** (zero or more): project skills shipped in the repository, used by the app's agents;
 - **tasks**: scheduled work the scheduler runs on the app's behalf;
-- **storage**: databases and blob stores ai-space provisions for the app.
+- **storage**: databases and blob stores ai-space provisions for the app;
+- **notify**: the chat channels the app may send notifications to.
 
 The model is the Android one: the app declares its widgets and agents, ships them in its own repository, and the space's web UI is the launcher that lists, places and routes them. Nothing in the space exists outside an app except the space's own services.
 
@@ -82,7 +83,7 @@ repo: https://github.com/<owner>/my-app.git   # informative; set by new-app
 | `status` | enum | `paused` keeps the app listed but stops its tasks and service; `archived` hides it and stops everything. Storage is never dropped by a status change. |
 | `repo` | string | The origin URL. |
 
-Sections: `service`, `agents`, `widgets`, `skills`, `tasks`, `storage`. Each is optional.
+Sections: `service`, `agents`, `widgets`, `skills`, `tasks`, `storage`, `notify`. Each is optional.
 
 ### `service`
 
@@ -222,6 +223,28 @@ storage:
 
 ai-space provisions what is declared and writes `DATABASE_URL`, `BLOB_URL`, `SPACE_APP_DATA_DIR` and, for S3, the `S3_*` credentials into `space.env`. Apps read the URL and connect with whatever client their language has; SQL written against the portable subset in storage.md runs on both backends.
 
+### `notify`
+
+Outbound notifications to chat apps (Telegram, Discord, Slack, Feishu, DingTalk, WeCom, Bark, ntfy, a generic webhook). The full reference is in [notify.md](notify.md). Channels and their credentials are configured once by the operator in `<workspace>/.env`; the app only says which of them it may use:
+
+```yaml
+notify:
+  default: ops                     # channel used when a request names none; default: default
+  channels: [ops, trades]          # channels this app may name; default: [default]
+  title: My App                    # tag in the first line of every message; default: the app title
+  window: 10m                      # default dedup window for keyed messages; default: 10m
+```
+
+The app sends one HTTP request and never touches channel markup or credentials:
+
+```
+POST ${SPACE_API_URL}/api/notify
+Authorization: Bearer ${SPACE_APP_TOKEN}
+{ "level": "alert", "title": "Feed stalled", "text": "No items for 3 hours.", "url": "https://…", "key": "feed-stalled" }
+```
+
+`level` is `info` (default), `success`, `warn`, `alert` or `report`; `text` is plain text; `image` is optional. The call returns as soon as the message is queued. Naming a channel outside `channels` is a 400; sending when no channel is configured succeeds and is recorded as skipped, so an app never fails because notifications are not set up. Shell tasks use `bun src/index.ts notify`, agents use the shared skill `space:notify`. Tasks can ask the scheduler to notify on failure or success with `notify: { on: [error, ok], channel: ops }` and no app code at all.
+
 ## Repository
 
 Every app is a git repository from the first minute, created by `new-app` (below) or by hand following the same steps:
@@ -285,6 +308,7 @@ Environment, always:
 | `SPACE_APP_DIR` | Absolute path of the app directory. |
 | `SPACE_APP_DATA_DIR` | Absolute path of `<workspace>/data/<name>/`. |
 | `SPACE_API_URL` | Base URL of the Space API, loopback. |
+| `SPACE_APP_TOKEN` | Per-app bearer token for the Space API; identifies the app on `POST /api/notify`. Written to `space.env`. |
 | `PORT` | For services: the declared port. |
 
 Environment, when declared: `DATABASE_URL` (or `DATABASE_URL_<NAME>` for several), `BLOB_URL`, `S3_*`.
@@ -297,9 +321,10 @@ API, for apps and their agents:
 | `GET /api/tasks`, `POST /api/tasks/:id/run` | Inspect and trigger the app's own tasks. |
 | `GET /api/widgets` | Every widget's latest payload (used by the panel). |
 | `POST /api/agents/:app/:agent/chat` | Open or continue a chat session. |
+| `POST /api/notify`, `GET /api/notifications?app` | Send a notification; read the app's own delivery history. |
 | `GET /api/spec` | The spec version and JSON Schema this ai-space enforces. |
 
-Mutating routes require the bearer token from `SPACE_API_TOKEN`.
+Mutating routes require the bearer token from `SPACE_API_TOKEN`, or the app's own `SPACE_APP_TOKEN` where the route acts on behalf of one app.
 
 ## Full example
 
@@ -344,6 +369,9 @@ storage:
   backup:
     schedule: "0 3 * * *"
     keep: { daily: 7, weekly: 4 }
+
+notify:
+  channels: [default, reports]
 ```
 
 ## Implementation status
@@ -353,6 +381,7 @@ storage:
 | Workspace layout, app discovery, `space.env` | Implemented (`src/space/workspace.ts`, `src/space/storage/`) |
 | `tasks` | Implemented (`src/space/scheduler/`) |
 | `storage` databases and blob hand-over | Implemented; managed blob API and backups pending |
+| `notify`, `/api/notify`, `SPACE_APP_TOKEN` | Designed ([notify.md](notify.md)) |
 | Top-level `spec`, `title`, `description`, `icon`, `status`, `repo` | Planned |
 | `service` | Planned |
 | `agents`, chat route | Planned |
