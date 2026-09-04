@@ -290,7 +290,7 @@ Commit messages follow Conventional Commits, as in ai-space itself.
 
 | Step | Command | What happens |
 | --- | --- | --- |
-| Create | `bun run new-app <name> [--no-github]` | Copies `templates/app/`, fills in the name, `git init` and first commit, private GitHub repository when configured, registers nothing else: the directory under `apps/` is the registration. |
+| Create | `bun run new-app <name> [--no-github]` | Copies `templates/app/`, fills in the name, `git init` and first commit, private GitHub repository when configured, registers nothing else: the directory under `apps/` is the registration. Until the command exists, the shared skill [`space-app`](../skills/space-app/SKILL.md) does the same by hand from its own templates, and also covers adopting an existing project and every later change. |
 | Validate | `bun run validate [<dir>]` | Parses `space.yaml` against the schema and the semantic rules (unique ports, referenced files exist, placeholders resolvable). Exit code 1 with one line per problem. |
 | Sync | automatic on boot and on `POST /api/apps/sync` | Discovers every `apps/*/space.yaml`, provisions storage, registers tasks, starts services, publishes agents and widgets. Idempotent. |
 | Pause / archive | edit `status:` and sync | Tasks and service stop; storage stays. |
@@ -392,4 +392,4 @@ notify:
 | Panel (web UI, layout, manifest-only apps) | Implemented ([panel.md](panel.md)) |
 | `skills`, shared skills under `skills/` | Planned |
 | JSON Schema (`schema/space.schema.json`), `validate`, `/api/spec` | Planned |
-| `templates/app/`, `new-app`, GitHub repository creation | Planned |
+| `templates/app/`, `new-app`, GitHub repository creation | Planned; the shared skill `skills/space-app/` and its templates cover creation, adoption and edits by hand today |
