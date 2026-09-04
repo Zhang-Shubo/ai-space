@@ -164,6 +164,9 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
+    // Bun closes a connection idle for 10 s by default, which cuts a chat stream during a long tool
+    // call; 255 s is the maximum, and the chat heartbeat (20 s) keeps proxies in between alive.
+    idleTimeout: 255,
     // The web UI is bundled once at boot; SPACE_DEV=1 turns on Bun's dev server (hot reload) instead.
     development: process.env.SPACE_DEV === "1",
     routes: {

@@ -108,7 +108,12 @@ export function chatStream(t: ChatTurn, cb: ChatCallbacks): { kill: () => void }
   return { kill: () => proc.kill() };
 }
 
-/** A long tool call emits nothing; proxies in between (a tunnel's edge) drop a stream idle for ~100 s. */
+/**
+ * A long tool call emits nothing. Proxies in between (a tunnel's edge) drop a
+ * stream idle for ~100 s, and Bun's own server does so after `idleTimeout`
+ * (set to 255 s in the entry point; the default is 10 s), so a comment line
+ * goes out every 20 s while a turn runs.
+ */
 export const HEARTBEAT_MS = 20_000;
 
 /**
