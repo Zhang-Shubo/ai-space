@@ -72,3 +72,68 @@ test("the storage section is passed through raw for the storage service", () => 
   expect(m.storage).toEqual({ databases: ["news", { name: "cache" }] });
   expect("storage" in parseManifest("name: demo\ntasks: []\n", "/x")).toBe(false);
 });
+
+describe("parseManifest top level", () => {
+  const FULL = `
+spec: 1
+name: notes
+title: Notes
+description: Personal notes.
+icon: icon.svg
+url: https://notes.example.com
+status: paused
+repo: https://github.com/example/notes.git
+service:
+  command: bun src/index.ts
+  port: 8710
+  health: /healthz
+  env: { LOG_LEVEL: info }
+agents:
+  - name: librarian
+    description: Files notes.
+    prompt: agents/librarian.md
+    tools: [Read, "Bash(bun *)"]
+    skills: [./skills, space:keep]
+widgets:
+  - name: recent
+    title: Notes · Recent
+    source: /api/widget/recent
+    link: /#recent
+    size: 2x1
+    refresh: 2m
+  - name: board
+    kind: embed
+    source: https://127.0.0.1:8710/board
+`;
+
+  test("parses identity, service, agents and widgets with defaults", () => {
+    const m = parseManifest(FULL, "/apps/notes");
+    expect(m).toMatchObject({ app: "notes", spec: 1, title: "Notes", url: "https://notes.example.com", status: "paused", repo: "https://github.com/example/notes.git" });
+    expect(m.service).toEqual({ command: "bun src/index.ts", port: 8710, health: "/healthz", env: { LOG_LEVEL: "info" } });
+    expect(m.agents[0]).toEqual({ name: "librarian", title: "librarian", description: "Files notes.", runtime: "claude", prompt: "agents/librarian.md", cwd: ".", tools: ["Read", "Bash(bun *)"], skills: ["./skills", "space:keep"], memory: "shared" });
+    expect(m.widgets[0]).toEqual({ name: "recent", title: "Notes · Recent", kind: "items", source: "/api/widget/recent", link: "/#recent", size: "2x1", refreshMs: 120_000 });
+    expect(m.widgets[1]).toMatchObject({ kind: "embed", size: "1x1", refreshMs: 60_000 });
+  });
+
+  test("applies defaults on an empty manifest", () => {
+    const m = parseManifest("", "/apps/bare");
+    expect(m).toMatchObject({ app: "bare", spec: 1, status: "active", agents: [], widgets: [], tasks: [] });
+    expect("title" in m).toBe(false);
+  });
+
+  test("rejects unknown keys, bad values and duplicates", () => {
+    expect(() => parseManifest("nme: x", "/d")).toThrow(/unknown top-level key "nme"/);
+    expect(() => parseManifest("spec: 2", "/d")).toThrow(/unsupported spec version/);
+    expect(() => parseManifest("status: gone", "/d")).toThrow(/status must be/);
+    expect(() => parseManifest("url: notes.example.com", "/d")).toThrow(/url must start/);
+    expect(() => parseManifest("service: { command: x }", "/d")).toThrow(/service.port/);
+    expect(() => parseManifest("service: { command: x, port: 80, health: healthz }", "/d")).toThrow(/service.health/);
+    expect(() => parseManifest("agents:\n  - name: A", "/d")).toThrow(/invalid or missing name/);
+    expect(() => parseManifest("agents:\n  - name: a\n    runtime: gpt", "/d")).toThrow(/runtime must be/);
+    expect(() => parseManifest("agents:\n  - name: a\n  - name: a", "/d")).toThrow(/duplicate agents name/);
+    expect(() => parseManifest("widgets:\n  - name: w", "/d")).toThrow(/source is required/);
+    expect(() => parseManifest("widgets:\n  - name: w\n    source: api/w", "/d")).toThrow(/source must be/);
+    expect(() => parseManifest("widgets:\n  - name: w\n    source: /w\n    refresh: 5s", "/d")).toThrow(/at least 15s/);
+    expect(() => parseManifest("widgets:\n  - name: w\n    source: /w\n    size: 3x3", "/d")).toThrow(/size must be/);
+  });
+});

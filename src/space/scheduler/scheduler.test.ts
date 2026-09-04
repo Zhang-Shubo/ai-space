@@ -22,7 +22,7 @@ function harness(opts: { runner?: Runner; maxConcurrency?: number } = {}) {
     advance: (ms: number) => {
       t += ms;
     },
-    manifest: (tasks: Manifest["tasks"], app = "demo"): Manifest => ({ app, dir: "/apps/" + app, tasks }),
+    manifest: (tasks: Manifest["tasks"], app = "demo"): Manifest => ({ app, dir: "/apps/" + app, spec: 1, status: "active", agents: [], widgets: [], tasks }),
   };
 }
 
