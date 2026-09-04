@@ -64,6 +64,8 @@ curl -sS -X POST "$API/api/apps" -H 'content-type: application/json' -d '{"link"
 
 or post the identity fields directly (`name`, `title`, `description`, `icon` as emoji or URL, `url`, `repo`). The panel writes `apps/<name>/space.yaml` and syncs it. A link app cannot declare a service; if it later grows code, replace the directory with the clone (mode **adopt**) and restart.
 
+An app that runs on another machine with its own ai-space does not need a link app: register that machine as a peer of this one (`SPACE_PEER_<NAME>` in the workspace `.env`, [docs/peers.md](../../docs/peers.md)) and its apps, agents, widgets and services appear here as `<peer>/<app>`, with chat forwarded. `GET /api/peers` lists link apps a peer makes redundant under `duplicates`; delete those.
+
 To remove one: `curl -sS -X DELETE "$API/api/apps/<name>"`. This is the only kind of app the API deletes.
 
 ## 3. Create a code app

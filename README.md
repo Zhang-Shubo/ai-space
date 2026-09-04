@@ -64,9 +64,8 @@ See [docs/app-spec.md](docs/app-spec.md) for the app specification (what an app 
 
 ## Status
 
-Early stage. Scheduler, storage, notifications and the panel (with agent chat and widgets) are in place. Follow-up work, roughly in order:
+Early stage. Scheduler, storage, notifications, the panel (with agent chat and widgets) and peers (one panel over several machines, [docs/peers.md](docs/peers.md)) are in place. Follow-up work, roughly in order:
 
 - **Service supervision** - start `service.command`, restart it on failure, collect its logs under `<workspace>/logs/<app>/`; the panel probes health directly until then.
 - **Skills mounting** - make `skills:` from the manifest available to agent sessions.
 - **Managed blob API and backups** - the parts of the storage design that are not implemented yet.
-- **Multi-machine deployment** - one ai-space per machine, each with its own workspace, database and loopback services; nothing is shared between machines. A hub space lists the others as peers (name, URL, token in the workspace `.env`), merges their apps, agents, widgets and service health into its panel under a `<peer>/` prefix, and forwards chat and embed requests to the machine that owns the app. Scheduler, storage and notify stay local to each machine; an app lives on exactly one machine. Until this exists, register apps on other machines on the hub panel as manifest-only link apps.

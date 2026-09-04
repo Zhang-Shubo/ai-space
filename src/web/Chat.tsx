@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { type AgentInfo, type ChatSession, getJson, isImgIcon, relTime } from "./api.ts";
+import { agentBase, type AgentInfo, type ChatSession, getJson, isImgIcon, relTime } from "./api.ts";
 
 // Chat drawer. The server streams the runtime's stream-json events over SSE.
 // - Mounted permanently (closing only slides it away) so conversations and session ids survive.
@@ -177,7 +177,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
   const key = agent.id;
   const conv = convs[key] || EMPTY_CONV;
   const patch = (k: string, fn: (v: Conv) => Conv) => setConvs((c) => ({ ...c, [k]: fn(c[k] || { ...EMPTY_CONV }) }));
-  const base = `/api/agents/${encodeURIComponent(agent.app)}/${encodeURIComponent(agent.name)}`;
+  const base = agentBase(agent);
 
   useEffect(() => {
     patch(key, (v) => ({ ...v, agent: agent || v.agent }));

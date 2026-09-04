@@ -49,7 +49,7 @@ Edit mode has an "Add" tile that takes one link. The panel asks the claude runti
 
 Two tables in `space.db`, both panel-owned:
 
-- `panel_kv` holds the layout: `{ order: { apps, agents, widgets }, hidden }`. Order lists are names (apps) or ids (`app/name` for agents and widgets); names missing from a list follow it alphabetically. `hidden` is the set of apps the panel does not show; they stay registered and scheduled.
+- `panel_kv` holds the layout: `{ order: { apps, agents, widgets }, hidden }`. Order lists are ids: app names, `app/name` for agents and widgets, and `<peer>/…` for entries from a peer machine; ids missing from a list follow it, local before peer, alphabetically. `hidden` is the set of apps the panel does not show; they stay registered and scheduled.
 - `chat_sessions` keeps the last ten sessions per agent (`agent`, `sid`, `title`, `ts`). A resumed session gets a new id from the runtime; the previous row is replaced so a conversation stays one entry.
 
 Nothing panel-related is written into an app directory or into the workspace as loose files.
@@ -74,7 +74,7 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | --- | --- |
 | `GET /` and the PWA files | the web UI |
 | `GET /api/apps`, `GET /api/apps/:app` | app views (`?all=1` lists every app, including hidden ones and those without a url) |
-| `GET /api/services` | every app with a `service`: port and health, for the settings pop-over |
+| `GET /api/services` | every app with a `service`: port and health, for the settings pop-over; plus `peers`, one entry per peer machine |
 | `POST /api/apps` | create a manifest-only app from `{ link }` or identity fields |
 | `PATCH /api/apps/:app` | `{ hidden }` |
 | `DELETE /api/apps/:app` | manifest-only apps only |
@@ -85,6 +85,8 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | `GET /api/agents` | every agent the panel lists |
 | `POST /api/agents/:app/:agent/chat` | one chat turn, SSE |
 | `GET /api/agents/:app/:agent/sessions[/:sid]` | recent sessions, restored transcript |
+| `GET /api/peers`, `PATCH /api/peers/:peer/apps/:app`, `/api/peers/:peer/…` | peer machines, hub-side hide, forwarded icon/embed/chat/sessions ([peers.md](peers.md)) |
+| `/api/peer/…` | this space as a peer of a hub, bearer-guarded ([peers.md](peers.md)) |
 
 ## Trust boundary
 
@@ -101,6 +103,7 @@ An operator who wants a second factor puts it in front of the tunnel, not in ai-
 src/space/panel/    registry.ts (registered manifests), layout.ts (panel_kv), health.ts,
                     widgets.ts (feed + cache), view.ts (API shapes), links.ts (manifest-only apps),
                     api.ts (routes)
+src/space/peers/    other machines' panels merged into this one, and this one served to a hub (peers.md)
 src/space/agents/   runtime.ts (claude process + SSE), sessions.ts (chat_sessions),
                     transcript.ts, api.ts (routes, space agent)
 src/web/            index.html, main.tsx, App.tsx, Chat.tsx, Tasks.tsx, Pet.tsx, petdex.ts (pet lookup),

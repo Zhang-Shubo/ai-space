@@ -1,7 +1,9 @@
+import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { NotifyService, NotifyStore, createNotifyRoutes, createTaskNotifier, loadChannels, parseNotifySpec } from "./space/notify/index.ts";
 import { SessionStore, createAgentRoutes } from "./space/agents/index.ts";
 import { AppRegistry, HealthProbe, LayoutStore, WidgetFeed, createPanelRoutes } from "./space/panel/index.ts";
+import { PeerHub, PeerStore, createPeerRoutes, createPeerServeRoutes, loadPeers } from "./space/peers/index.ts";
 import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
 import { type S3Config, StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
 import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolveHome } from "./space/workspace.ts";
@@ -17,7 +19,7 @@ import { createWebRoutes } from "./web/routes.ts";
  *
  * Configuration comes from the environment, then from `<workspace>/.env`
  * (process values win). See `.env.example`, `docs/scheduler.md`, `docs/storage.md`
- * `docs/notify.md` and `docs/panel.md`.
+ * `docs/notify.md`, `docs/panel.md` and `docs/peers.md`.
  */
 
 export type Config = {
@@ -38,6 +40,10 @@ export type Config = {
   chatModel: string;
   /** Extra arguments for the chat runtime (SPACE_CHAT_ARGS), e.g. a permission wrapper. */
   chatArgs: string[];
+  /** What this space calls itself towards a hub (SPACE_NAME); default: the hostname. */
+  name: string;
+  /** Token a hub must present on `/api/peer/*` (SPACE_HUB_TOKEN); empty = those routes are absent. */
+  hubToken: string;
 };
 
 export function loadConfig(ws: Workspace, env: Record<string, string | undefined> = process.env): Config {
@@ -56,6 +62,8 @@ export function loadConfig(ws: Workspace, env: Record<string, string | undefined
     notifyTasks: env.SPACE_NOTIFY_TASKS?.trim() ?? "",
     chatModel: env.SPACE_CHAT_MODEL?.trim() ?? "sonnet",
     chatArgs: (env.SPACE_CHAT_ARGS ?? "").split(/\s+/).filter(Boolean),
+    name: env.SPACE_NAME?.trim() || hostname(),
+    hubToken: env.SPACE_HUB_TOKEN?.trim() ?? "",
     ...(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim()
       ? {
           s3: {
@@ -98,6 +106,9 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
   const sessions = new SessionStore(store.db);
   const health = new HealthProbe();
   const widgets = new WidgetFeed(registry);
+  const { peers: peerConfigs, errors: peerErrors } = loadPeers(env);
+  for (const [name, reason] of peerErrors) console.error(`[peers] ${name}: ${reason}`);
+  const peers = new PeerHub(peerConfigs, { store: new PeerStore(store.db) });
 
   // Storage first, so a command task started right after sync already sees its DATABASE_URL.
   const provision = async (manifest: Manifest) => {
@@ -123,8 +134,30 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
       console.error(`[space] skipping ${dir}: ${(e as Error).message}`);
     }
   }
+  // A peer named like a local app would make `<name>/` ambiguous on the panel.
+  for (const p of peerConfigs) {
+    if (registry.get(p.name)) {
+      console.error(`[peers] peer "${p.name}" has the name of a local app; rename one of them`);
+      process.exit(1);
+    }
+  }
   notify.start();
   await scheduler.start();
+  peers.start();
+
+  const panelRoutes = createPanelRoutes({
+    ws,
+    registry,
+    layout,
+    widgets,
+    health,
+    peers,
+    onCreate: syncDir,
+    onRemove: async (app) => {
+      scheduler.syncManifest({ app, dir: join(ws.apps, app), spec: 1, status: "archived", agents: [], widgets: [], tasks: [] });
+    },
+  });
+  const agentRoutes = createAgentRoutes({ ws, registry, layout, sessions, defaultModel: config.chatModel, extraArgs: config.chatArgs, envFor: (app) => storage.envFor(app), peers });
 
   const server = Bun.serve({
     hostname: config.host,
@@ -135,28 +168,21 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
       ...createRoutes({ scheduler, store, token: config.apiToken, onManifest: provision, discover }),
       ...createStorageRoutes({ storage, token: config.apiToken }),
       ...createNotifyRoutes({ notify, store: notifyStore, token: config.apiToken, appForToken: (t) => storage.appForToken(t) }),
-      ...createPanelRoutes({
-        ws,
-        registry,
-        layout,
-        widgets,
-        health,
-        onCreate: syncDir,
-        onRemove: async (app) => {
-          scheduler.syncManifest({ app, dir: join(ws.apps, app), spec: 1, status: "archived", agents: [], widgets: [], tasks: [] });
-        },
-      }),
-      ...createAgentRoutes({ ws, registry, layout, sessions, defaultModel: config.chatModel, extraArgs: config.chatArgs, envFor: (app) => storage.envFor(app) }),
+      ...panelRoutes,
+      ...agentRoutes,
+      ...createPeerRoutes({ hub: peers, layout, registry }),
+      ...createPeerServeRoutes({ token: config.hubToken, name: config.name, panel: panelRoutes, agents: agentRoutes }),
       ...createWebRoutes(),
     },
     fetch: () => new Response(JSON.stringify({ ok: false, error: "not found" }), { status: 404, headers: { "content-type": "application/json" } }),
   });
-  console.log(`[space] listening on http://${config.host}:${server.port} · workspace ${ws.home} · apps ${registry.list().length}`);
+  console.log(`[space] listening on http://${config.host}:${server.port} · workspace ${ws.home} · apps ${registry.list().length}${peers.names().length ? ` · peers ${peers.names().join(", ")}` : ""}${config.hubToken ? " · serving /api/peer as " + config.name : ""}`);
 
   const shutdown = async () => {
     console.log("[space] shutting down");
     scheduler.stop();
     notify.stop();
+    peers.stop();
     server.stop();
     await scheduler.idle();
     await notify.idle();
@@ -167,7 +193,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 
-  return { store, storage, scheduler, notify, notifyStore, registry, server };
+  return { store, storage, scheduler, notify, notifyStore, registry, peers, server };
 }
 
 /**

@@ -2,6 +2,8 @@
 
 export type AgentInfo = {
   id: string;
+  /** Set when the agent lives on a peer machine; chat goes through /api/peers/<peer>/. */
+  peer?: string;
   app: string;
   name: string;
   title: string;
@@ -11,7 +13,12 @@ export type AgentInfo = {
 };
 
 export type AppInfo = {
+  /** The layout key: the name, or `<peer>/<name>` for an app on a peer. */
+  id: string;
   name: string;
+  peer?: string;
+  /** The peer this entry comes from is not answering; the entry is its last known state. */
+  stale?: boolean;
   title: string;
   description?: string;
   icon: string;
@@ -27,6 +34,7 @@ export type AppInfo = {
 
 export type ServiceInfo = {
   app: string;
+  peer?: string;
   title: string;
   icon: string;
   port: number;
@@ -38,6 +46,8 @@ export type ServiceInfo = {
 export type WidgetItem = { text: string; url: string; time: string };
 export type WidgetInfo = {
   id: string;
+  peer?: string;
+  stale?: boolean;
   app: string;
   name: string;
   title: string;
@@ -46,6 +56,20 @@ export type WidgetInfo = {
   kind: "items" | "embed";
   size: string;
 } & ({ ok: true; items: WidgetItem[] } | { ok: false; error: string });
+
+/** One peer machine as `GET /api/services` and `GET /api/peers` report it. */
+export type PeerInfo = {
+  name: string;
+  url: string;
+  health: "ok" | "down";
+  asOf?: string;
+  error?: string;
+  stale: boolean;
+  apps: number;
+  agents: number;
+  widgets: number;
+  services: number;
+};
 
 export type Layout = { order: { apps: string[]; agents: string[]; widgets: string[] }; hidden: string[] };
 
@@ -72,6 +96,10 @@ export const repoUrl = (r: string) => {
   const m = r.match(/^git@([^:]+):(.+?)(\.git)?$/);
   return m ? `https://${m[1]}/${m[2]}` : r;
 };
+
+/** The route base of an agent's chat: local, or forwarded to the peer that owns it. */
+export const agentBase = (a: { peer?: string; app: string; name: string }) =>
+  `${a.peer ? `/api/peers/${encodeURIComponent(a.peer)}` : "/api"}/agents/${encodeURIComponent(a.app)}/${encodeURIComponent(a.name)}`;
 
 export const relTime = (iso: string | number) => {
   const ms = typeof iso === "number" ? iso : new Date(iso).getTime();

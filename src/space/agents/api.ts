@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { type LayoutStore, orderBy } from "../panel/layout.ts";
 import type { AppRegistry } from "../panel/registry.ts";
 import { type AgentView, agentView } from "../panel/view.ts";
+import type { PeerHub } from "../peers/hub.ts";
 import type { Manifest, ManifestAgent } from "../scheduler/manifest.ts";
 import { loadAppEnv } from "../scheduler/targets.ts";
 import type { Workspace } from "../workspace.ts";
@@ -12,7 +13,7 @@ import { readTranscript } from "./transcript.ts";
 /**
  * HTTP surface for agents, shaped as a Bun.serve `routes` table.
  *
- *   GET  /api/agents                              every agent of every visible app, plus the space agent
+ *   GET  /api/agents                              every agent of every visible app, plus the space agent, then the peers' agents
  *   POST /api/agents/:app/:agent/chat             { message, sessionId?, model?, permissionMode? } → SSE
  *   GET  /api/agents/:app/:agent/sessions         recent sessions
  *   GET  /api/agents/:app/:agent/sessions/:sid    restored transcript
@@ -33,6 +34,8 @@ export type AgentsApiOptions = {
   envFor?: (app: string) => Promise<Record<string, string>>;
   /** Home directory for transcripts; default: the process's. */
   home?: string;
+  /** Other machines whose agents this panel lists; chat with them is forwarded by the peer routes. */
+  peers?: PeerHub;
 };
 
 /** The space's own agent: the default chat identity, working in the workspace root. */
@@ -108,7 +111,8 @@ export function createAgentRoutes(opts: AgentsApiOptions): Routes {
           if (hidden.has(manifest.app) || manifest.status === "archived") continue;
           for (const a of manifest.agents) agents.push(agentView(manifest, a));
         }
-        return json({ ok: true, agents: orderBy(agents, lay.order.agents, (a) => a.id) });
+        agents.push(...(opts.peers?.agents(hidden) ?? []));
+        return json({ ok: true, agents: orderBy(agents, lay.order.agents, (a) => a.id, (a) => (a.peer ? 1 : 0)) });
       },
     },
 

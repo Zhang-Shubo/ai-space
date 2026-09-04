@@ -1,4 +1,5 @@
 import { resolve, sep } from "node:path";
+import type { PeerHub } from "../peers/hub.ts";
 import type { Workspace } from "../workspace.ts";
 import type { HealthProbe } from "./health.ts";
 import { type LayoutStore, orderBy } from "./layout.ts";
@@ -17,7 +18,7 @@ import { type WidgetFeed, sourceUrl } from "./widgets.ts";
  *   DELETE /api/apps/:app                manifest-only apps only
  *   GET    /api/apps/:app/icon
  *   GET    /api/agents/:app/:agent/avatar
- *   GET    /api/services                 every app that declares a service, with its health
+ *   GET    /api/services                 every app that declares a service, with its health; peers with theirs
  *   GET    /api/widgets                  every widget's latest payload
  *   GET    /api/widgets/:app/:name/embed the page of a `kind: embed` widget, proxied from its source
  *   GET    /api/panel/layout             order + hidden
@@ -27,6 +28,9 @@ import { type WidgetFeed, sourceUrl } from "./widgets.ts";
  * These routes are what the browser calls. They carry no bearer token: the
  * panel is reached through the operator's tunnel and access layer, and on the
  * machine itself through loopback. See docs/panel.md.
+ *
+ * With peers configured, the four lists (apps, services, widgets, agents)
+ * append the peers' entries after the local ones; see docs/peers.md.
  */
 
 export type PanelApiOptions = {
@@ -42,6 +46,8 @@ export type PanelApiOptions = {
   /** Turn a link into identity fields; default asks the claude runtime. */
   resolveLink?: (link: string) => Promise<Record<string, unknown>>;
   fetch?: typeof fetch;
+  /** Other machines whose panels this one merges. */
+  peers?: PeerHub;
 };
 
 type Handler = (req: Request & { params: Record<string, string> }) => Response | Promise<Response>;
@@ -50,7 +56,8 @@ type Routes = Record<string, Handler | Partial<Record<"GET" | "POST" | "PATCH" |
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
 export function createPanelRoutes(opts: PanelApiOptions): Routes {
-  const { registry, layout, widgets, health } = opts;
+  const { registry, layout, widgets, health, peers } = opts;
+  const tier = (v: { peer?: string }) => (v.peer ? 1 : 0);
   const resolveLink = opts.resolveLink ?? ((link: string) => resolveLinkWithAgent(link));
   const colorCache = new Map<string, { at: number; color: string }>();
 
@@ -88,13 +95,15 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
     const hidden = new Set(lay.hidden);
     const entries = registry.list().filter((e) => all || (e.manifest.url && !hidden.has(e.manifest.app) && e.manifest.status !== "archived"));
     const views = await Promise.all(entries.map((e) => viewOf(e.manifest.app, hidden)));
-    return orderBy(views, lay.order.apps, (v) => v.name);
+    // Peer snapshots already exclude what the peer hides or archived; the hub's own hidden set applies on top.
+    const remote = peers?.apps(hidden).filter((v) => all || (v.url && !v.hidden)) ?? [];
+    return orderBy([...views, ...remote], lay.order.apps, (v) => v.id, tier);
   };
 
   const listServices = async (): Promise<ServiceView[]> => {
     const hidden = new Set(layout.read().hidden);
     const rows = await Promise.all(registry.list().map(async (e) => serviceView(e, { hidden: hidden.has(e.manifest.app), health: await healthOf(e) })));
-    return rows.filter((r): r is ServiceView => r !== undefined);
+    return [...rows.filter((r): r is ServiceView => r !== undefined), ...(peers?.services(hidden) ?? [])];
   };
 
   return {
@@ -163,15 +172,15 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
     },
 
     "/api/services": {
-      GET: wrap(async () => json({ ok: true, services: await listServices(), asOf: new Date().toISOString() })),
+      GET: wrap(async () => json({ ok: true, services: await listServices(), peers: peers?.status() ?? [], asOf: new Date().toISOString() })),
     },
 
     "/api/widgets": {
       GET: wrap(async () => {
         const lay = layout.read();
         const hidden = new Set(lay.hidden);
-        const all = (await widgets.all()).filter((w) => !hidden.has(w.app));
-        return json({ ok: true, widgets: orderBy(all, lay.order.widgets, (w) => w.id), asOf: new Date().toISOString() });
+        const all = [...(await widgets.all()).filter((w) => !hidden.has(w.app)), ...(peers?.widgets(hidden) ?? [])];
+        return json({ ok: true, widgets: orderBy(all, lay.order.widgets, (w) => w.id, tier), asOf: new Date().toISOString() });
       }),
     },
 

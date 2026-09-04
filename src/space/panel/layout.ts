@@ -77,13 +77,16 @@ export class LayoutStore {
   }
 }
 
-/** Sort by a stored order; names not in it follow, alphabetically. */
-export function orderBy<T>(items: T[], order: string[], nameOf: (item: T) => string): T[] {
+/**
+ * Sort by a stored order; names not in it follow, by tier (local entries
+ * before peer entries) and then alphabetically.
+ */
+export function orderBy<T>(items: T[], order: string[], nameOf: (item: T) => string, tierOf: (item: T) => number = () => 0): T[] {
   const pos = new Map(order.map((n, i) => [n, i]));
   return items.slice().sort((a, b) => {
     const pa = pos.get(nameOf(a)) ?? Number.MAX_SAFE_INTEGER;
     const pb = pos.get(nameOf(b)) ?? Number.MAX_SAFE_INTEGER;
-    return pa - pb || nameOf(a).localeCompare(nameOf(b));
+    return pa - pb || tierOf(a) - tierOf(b) || nameOf(a).localeCompare(nameOf(b));
   });
 }
 

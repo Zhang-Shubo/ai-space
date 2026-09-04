@@ -8,8 +8,10 @@ import type { RegisteredApp } from "./registry.ts";
  */
 
 export type AgentView = {
-  /** `<app>/<name>`. */
+  /** `<app>/<name>`, or `<peer>/<app>/<name>` for an agent on a peer. */
   id: string;
+  /** Set when the agent lives on a peer machine; `app` and `name` stay the peer's bare names. */
+  peer?: string;
   app: string;
   name: string;
   title: string;
@@ -20,7 +22,13 @@ export type AgentView = {
 };
 
 export type AppView = {
+  /** The layout key: the name, or `<peer>/<name>` for an app on a peer. */
+  id: string;
   name: string;
+  /** Set when the app lives on a peer machine. */
+  peer?: string;
+  /** True when the entry comes from a snapshot of a peer that is not answering. */
+  stale?: boolean;
   title: string;
   description?: string;
   icon: string;
@@ -37,6 +45,7 @@ export type AppView = {
 /** One row of the Services list: every app that declares a service, whether or not it has a tile. */
 export type ServiceView = {
   app: string;
+  peer?: string;
   title: string;
   icon: string;
   port: number;
@@ -87,6 +96,7 @@ export function agentView(m: Manifest, a: ManifestAgent): AgentView {
 export function appView(entry: RegisteredApp, opts: { hidden: boolean; health?: Health }): AppView {
   const m = entry.manifest;
   return {
+    id: m.app,
     name: m.app,
     title: m.title ?? m.app,
     ...(m.description !== undefined ? { description: m.description } : {}),

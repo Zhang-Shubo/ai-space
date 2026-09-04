@@ -12,7 +12,11 @@ import type { AppRegistry } from "./registry.ts";
 export type WidgetItem = { text: string; url: string; time: string };
 
 export type WidgetView = {
+  /** `<app>/<name>`, or `<peer>/<app>/<name>` for a widget on a peer. */
   id: string;
+  peer?: string;
+  /** True when the payload is the last one seen from a peer that is not answering. */
+  stale?: boolean;
   app: string;
   name: string;
   title: string;

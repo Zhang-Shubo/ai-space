@@ -2,12 +2,13 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
-import { type AgentInfo, type AppInfo, type ServiceInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
+import { type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
 // Edit mode (long-press the background): add an app from a link, hide or delete, drag to reorder.
 // Everything comes from the apps' manifests through the panel API; the browser holds no secrets.
+// Entries from peer machines carry a badge with the peer name and are muted while that peer is down.
 
 const STATUS: Record<string, string> = { active: "active", paused: "paused", archived: "archived" };
 const HEALTH: Record<string, string> = { ok: "up", down: "down", unknown: "" };
@@ -31,6 +32,8 @@ function Tile({
   onOpen,
   showPop = true,
   dragProps,
+  badge,
+  stale,
   children,
 }: {
   icon: string;
@@ -43,6 +46,10 @@ function Tile({
   onOpen?: () => void;
   showPop?: boolean;
   dragProps?: DragProps;
+  /** The peer the entry comes from, shown in the icon's corner. */
+  badge?: string;
+  /** The peer is not answering: the entry is its last known state. */
+  stale?: boolean;
   children?: ReactNode;
 }) {
   // onOpen wins over href: agent tiles open the chat drawer; links move into the pop-over.
@@ -67,12 +74,13 @@ function Tile({
       <span className={`tile-icon ${isImgIcon(icon) ? "" : "solid"}`}>
         <Icon icon={icon} fallback={fallback} />
       </span>
+      {badge && <span className="tile-badge">{badge}</span>}
       <span className="tile-name">{name}</span>
       {!editing && !popHidden && showPop && <div className="pop">{children}</div>}
     </>
   );
   const common = {
-    className: "tile",
+    className: `tile${stale ? " stale" : ""}`,
     ...(dragProps as object),
     onMouseLeave: () => setPopHidden(false),
     onClick: () => {
@@ -90,16 +98,18 @@ function Tile({
 }
 
 function Widget({ w, dragProps, theme }: { w: WidgetInfo; dragProps?: DragProps; theme: string }) {
+  const embed = `${w.peer ? `/api/peers/${encodeURIComponent(w.peer)}` : "/api"}/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}`;
   return (
-    <div className={`widget s${w.size}`} {...(dragProps as object)}>
+    <div className={`widget s${w.size}${w.stale ? " stale" : ""}`} {...(dragProps as object)} title={w.stale ? `${w.peer} is not answering; last known state` : undefined}>
       <div className="widget-head">
         <span className="widget-ico">
           <Icon icon={w.icon} fallback="📦" />
         </span>
         <b>{w.title}</b>
+        {w.peer && <span className="widget-peer">{w.peer}</span>}
       </div>
       {w.kind === "embed" ? (
-        <iframe title={w.title} src={`/api/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}`} sandbox="allow-scripts" loading="lazy" />
+        <iframe title={w.title} src={embed} sandbox="allow-scripts" loading="lazy" />
       ) : w.ok ? (
         <div className="widget-list">
           {w.items.slice(0, 6).map((it, i) => (
@@ -265,14 +275,15 @@ export default function App() {
     }
   });
   const [setsOpen, setSetsOpen] = useState(false);
-  // Services: every app that runs a process, with or without a page. Loaded each time the pop-over opens
-  // so the health dots are fresh (the server caches probes for 15 s).
-  const [services, setServices] = useState<ServiceInfo[] | null>(null);
+  // Services: every app that runs a process, with or without a page, plus the peer machines whose
+  // panels this one merges. Loaded each time the pop-over opens so the health dots are fresh (the
+  // server caches probes for 15 s and peer snapshots for their refresh period).
+  const [services, setServices] = useState<{ services: ServiceInfo[]; peers: PeerInfo[] } | null>(null);
   useEffect(() => {
     if (!setsOpen) return;
-    getJson<{ services: ServiceInfo[] }>("/api/services")
-      .then((d) => setServices(d.services || []))
-      .catch(() => setServices([]));
+    getJson<{ services: ServiceInfo[]; peers: PeerInfo[] }>("/api/services")
+      .then((d) => setServices({ services: d.services || [], peers: d.peers || [] }))
+      .catch(() => setServices({ services: [], peers: [] }));
   }, [setsOpen]);
   const savePrefs = (n: Prefs) => {
     localStorage.setItem("panel-prefs", JSON.stringify(n));
@@ -399,10 +410,12 @@ export default function App() {
     };
   }, []);
 
-  // Remove from the panel: manifest-only apps are deleted, apps with code are hidden.
+  // Remove from the panel: manifest-only apps are deleted, apps with code are hidden; a peer's app is
+  // hidden on this panel only (the peer is never changed from here).
   const removeApp = async (app: AppInfo) => {
     try {
-      if (app.manifestOnly) await sendJson("DELETE", `/api/apps/${encodeURIComponent(app.name)}`);
+      if (app.peer) await sendJson("PATCH", `/api/peers/${encodeURIComponent(app.peer)}/apps/${encodeURIComponent(app.name)}`, { hidden: true });
+      else if (app.manifestOnly) await sendJson("DELETE", `/api/apps/${encodeURIComponent(app.name)}`);
       else await sendJson("PATCH", `/api/apps/${encodeURIComponent(app.name)}`, { hidden: true });
     } catch {
       /* the reload shows the real state */
@@ -463,7 +476,7 @@ export default function App() {
             <div className={`launcher ${editing ? "editing" : ""}`}>
               {apps.map((p, i) => (
                 <Tile
-                  key={p.name}
+                  key={p.id}
                   icon={p.icon}
                   fallback="📦"
                   name={p.title}
@@ -473,6 +486,8 @@ export default function App() {
                   removeTitle={p.manifestOnly ? "Delete" : "Hide"}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("apps", setApps, i)}
+                  badge={p.peer}
+                  stale={p.stale}
                 >
                   <p className="pop-title">
                     {p.title}
@@ -481,6 +496,7 @@ export default function App() {
                       {p.service ? HEALTH[p.service.health] || STATUS[p.status] : STATUS[p.status] || p.status}
                     </span>
                   </p>
+                  {p.peer && <p className="pop-hint">{p.stale ? `On ${p.peer}, which is not answering; last known state` : `On ${p.peer}`}</p>}
                   {p.description && <p className="pop-body">{p.description}</p>}
                   {p.repo && (
                     <p className="pop-entry">
@@ -520,6 +536,7 @@ export default function App() {
                   }}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("agents", setAgents, i)}
+                  badge={a.peer}
                 >
                   <p className="pop-title">
                     {a.title}
@@ -592,16 +609,35 @@ export default function App() {
             Scheduled tasks
             <span>›</span>
           </button>
+          {services && services.peers.length > 0 && (
+            <>
+              <p className="sethead">Peers</p>
+              {services.peers.map((p) => (
+                <div key={p.name} className="svcrow" title={`${p.url}\n${p.apps} apps · ${p.agents} agents · ${p.widgets} widgets · ${p.services} services${p.asOf ? `\nsnapshot ${relTime(p.asOf)}` : ""}${p.error ? `\n${p.error}` : ""}`}>
+                  <span className="svc-ico">🛰</span>
+                  <span className="svc-name">{p.name}</span>
+                  {p.health !== "ok" && p.asOf && <span className="svc-port">{relTime(p.asOf)}</span>}
+                  <span className={`status ${p.health}`}>
+                    <i />
+                    {HEALTH[p.health]}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
           <p className="sethead">Services</p>
           {services === null ? (
             <p className="setnote">Loading…</p>
-          ) : services.length ? (
-            services.map((s) => (
-              <div key={s.app} className="svcrow" title={`${s.app} · 127.0.0.1:${s.port}${s.hidden ? " · hidden" : ""}`}>
+          ) : services.services.length ? (
+            services.services.map((s) => (
+              <div key={`${s.peer ?? ""}/${s.app}`} className="svcrow" title={`${s.peer ? `${s.peer}/` : ""}${s.app} · 127.0.0.1:${s.port}${s.hidden ? " · hidden" : ""}`}>
                 <span className="svc-ico">
                   <Icon icon={s.icon} fallback="📦" />
                 </span>
-                <span className="svc-name">{s.title}</span>
+                <span className="svc-name">
+                  {s.title}
+                  {s.peer && <span className="svc-peer">{s.peer}</span>}
+                </span>
                 <span className="svc-port">:{s.port}</span>
                 <span className={`status ${s.status === "active" ? s.health : s.status}`}>
                   <i />
