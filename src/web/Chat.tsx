@@ -469,6 +469,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
               <option value="haiku">haiku · fast</option>
               <option value="sonnet">sonnet</option>
               <option value="opus">opus · strong</option>
+              <option value="fable">fable · strongest</option>
             </select>
             <select className="chat-model" value={perm} onChange={pickPerm} title="Write access (next message)">
               <option value="">🔒 read-only</option>
