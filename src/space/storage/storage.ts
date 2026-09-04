@@ -1,28 +1,46 @@
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { SQL } from "bun";
+import { S3Client, SQL } from "bun";
 import type { Workspace } from "../workspace.ts";
 import { type Db, type Migration, sqliteUrl } from "./db.ts";
-import { type DatabaseSpec, type Dialect, NAME_PATTERN, type ProvisionedDatabase, type StorageSpec, databaseEnvName } from "./types.ts";
+import {
+  type BlobBackend,
+  type BlobSpec,
+  type DatabaseSpec,
+  type Dialect,
+  NAME_PATTERN,
+  type ProvisionedBlobStore,
+  type ProvisionedDatabase,
+  type S3Config,
+  type StorageSpec,
+  databaseEnvName,
+} from "./types.ts";
 
 /**
- * Storage service: provisions per-app databases, keeps the inventory and
- * writes `<workspace>/data/<app>/space.env`.
+ * Storage service: provisions per-app databases and blob stores, keeps the
+ * inventory and writes `<workspace>/data/<app>/space.env`.
  *
- * Provisioning is idempotent and never destructive. A database that exists is
- * left as it is; a manifest database that disappears is marked orphaned and
- * kept; removal is a deliberate CLI step, not a side effect of sync.
+ * Provisioning is idempotent and never destructive. A database or store that
+ * exists is left as it is; one that disappears from the manifest is marked
+ * orphaned and kept; removal is a deliberate CLI step, not a side effect of
+ * sync. An `s3` store is only checked for reachability the first time it is
+ * declared, so a flaky bucket does not stop the app from booting later.
  */
 
 export const ENV_FILE = "space.env";
+export const BLOB_DIR = "blobs";
 
 export type SyncResult = {
   app: string;
   databases: ProvisionedDatabase[];
+  blobs?: ProvisionedBlobStore;
   created: string[];
   orphaned: string[];
 };
+
+/** Bucket + prefix an s3 store resolves to, with the credentials it is checked with. */
+export type S3Target = S3Config & { bucket: string; prefix: string };
 
 export type StorageOptions = {
   ws: Workspace;
@@ -30,6 +48,10 @@ export type StorageOptions = {
   db: Db;
   /** Superuser URL used only to create per-app postgres databases and roles. */
   pgAdminUrl?: string;
+  /** Credentials for `s3` blob stores; absent disables the backend. */
+  s3?: S3Config;
+  /** Reachability check for a new s3 store. Defaults to one `list` call on the bucket. */
+  probeS3?: (target: S3Target) => Promise<void>;
   log?: (msg: string) => void;
 };
 
@@ -49,6 +71,18 @@ const MIGRATIONS: Migration[] = [
         PRIMARY KEY (app, name)
       )`,
   },
+  {
+    id: "002-storage-blob-stores",
+    up: (t) => `
+      CREATE TABLE IF NOT EXISTS storage_blob_stores (
+        app        TEXT PRIMARY KEY,
+        backend    TEXT NOT NULL,
+        url        TEXT NOT NULL,
+        orphaned   ${t.bool} NOT NULL DEFAULT ${t.false},
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL
+      )`,
+  },
 ];
 
 type Row = {
@@ -62,16 +96,22 @@ type Row = {
   updated_at: number;
 };
 
+type BlobRow = Omit<Row, "name" | "source">;
+
 export class StorageService {
   private readonly ws: Workspace;
   private readonly db: Db;
   private readonly pgAdminUrl?: string;
+  private readonly s3?: S3Config;
+  private readonly probeS3: (target: S3Target) => Promise<void>;
   private readonly log: (msg: string) => void;
 
   private constructor(opts: StorageOptions) {
     this.ws = opts.ws;
     this.db = opts.db;
     this.pgAdminUrl = opts.pgAdminUrl?.trim() || undefined;
+    this.s3 = opts.s3;
+    this.probeS3 = opts.probeS3 ?? defaultProbeS3;
     this.log = opts.log ?? ((m) => console.log(m));
   }
 
@@ -117,9 +157,19 @@ export class StorageService {
       orphaned.push(name);
     }
 
+    const currentBlobs = await this.blobStore(app);
+    if (spec.blobs) {
+      const { createdPath } = await this.provisionBlobs(app, spec.blobs, currentBlobs);
+      if (createdPath) created.push(createdPath);
+    } else if (currentBlobs && !currentBlobs.orphaned) {
+      await this.db.sql`UPDATE storage_blob_stores SET orphaned = ${true}, updated_at = ${Date.now()} WHERE app = ${app}`;
+      orphaned.push("blobs");
+    }
+
     const databases = await this.list(app);
-    await this.writeEnv(app, databases);
-    return { app, databases, created, orphaned };
+    const blobs = await this.blobStore(app);
+    await this.writeEnv(app, databases, blobs);
+    return { app, databases, ...(blobs ? { blobs } : {}), created, orphaned };
   }
 
   /** Provision one database at runtime (source `api`). Idempotent for an existing name with the same backend. */
@@ -138,7 +188,7 @@ export class StorageService {
       await this.upsert({ app, name, backend, url, source: "api", orphaned: false }, undefined);
     }
     const databases = await this.list(app);
-    await this.writeEnv(app, databases);
+    await this.writeEnv(app, databases, await this.blobStore(app));
     return databases.find((d) => d.name === name)!;
   }
 
@@ -147,12 +197,18 @@ export class StorageService {
     return rows.map(fromRow);
   }
 
+  async blobStore(app: string): Promise<ProvisionedBlobStore | undefined> {
+    const rows = (await this.db.sql`SELECT * FROM storage_blob_stores WHERE app = ${app}`) as BlobRow[];
+    return rows[0] ? fromBlobRow(rows[0]) : undefined;
+  }
+
   async listApps(): Promise<string[]> {
-    const rows = (await this.db.sql`SELECT DISTINCT app FROM storage_databases ORDER BY app`) as { app: string }[];
+    const rows = (await this.db.sql`
+      SELECT app FROM storage_databases UNION SELECT app FROM storage_blob_stores ORDER BY app`) as { app: string }[];
     return rows.map((r) => r.app);
   }
 
-  /** Public description of an app's storage: no passwords. */
+  /** Public description of an app's storage: no passwords, no S3 keys. */
   async describe(app: string) {
     const databases = (await this.list(app)).map((d) => ({
       name: d.name,
@@ -163,12 +219,22 @@ export class StorageService {
       ...(d.backend === "sqlite" ? { path: d.url.replace(/^sqlite:\/\//, "") } : {}),
       createdAt: new Date(d.createdAt).toISOString(),
     }));
-    return { app, dataDir: this.appDataDir(app), envFile: this.envFile(app), databases };
+    const store = await this.blobStore(app);
+    const blobs = store
+      ? {
+          backend: store.backend,
+          orphaned: store.orphaned,
+          env: "BLOB_URL",
+          ...(store.backend === "file" ? { path: store.url.replace(/^file:\/\//, "") } : s3Parts(store.url)),
+          createdAt: new Date(store.createdAt).toISOString(),
+        }
+      : null;
+    return { app, dataDir: this.appDataDir(app), envFile: this.envFile(app), databases, blobs };
   }
 
-  /** The variables an app process should see. Orphaned databases are left out. */
+  /** The variables an app process should see. Orphaned databases and stores are left out. */
   async envFor(app: string): Promise<Record<string, string>> {
-    return envVars(app, this.appDataDir(app), await this.list(app));
+    return envVars(app, this.appDataDir(app), await this.list(app), await this.blobStore(app), this.s3);
   }
 
   private async provision(app: string, d: DatabaseSpec): Promise<{ url: string; createdPath?: string }> {
@@ -207,6 +273,55 @@ export class StorageService {
     return `postgres://${encodeURIComponent(ident)}:${encodeURIComponent(password)}@${a.hostname}${a.port ? `:${a.port}` : ""}/${ident}`;
   }
 
+  /**
+   * Resolve the store URL, create the directory or probe the bucket, record it.
+   * Backend changes are refused (data does not move); a bucket or prefix change
+   * on an existing s3 store is accepted and logged, because it is the app's
+   * declaration and nothing on the old location is touched.
+   */
+  private async provisionBlobs(app: string, spec: BlobSpec, current: ProvisionedBlobStore | undefined): Promise<{ createdPath?: string }> {
+    if (current && current.backend !== spec.backend) {
+      throw new Error(`storage: blob store of ${app} is ${current.backend}; changing to ${spec.backend} is not supported by sync`);
+    }
+    let url: string;
+    let createdPath: string | undefined;
+    if (spec.backend === "file") {
+      const dir = join(this.appDataDir(app), BLOB_DIR);
+      if (!(await exists(dir))) {
+        await mkdir(dir, { recursive: true });
+        createdPath = dir;
+      }
+      url = `file://${dir}`;
+    } else {
+      const target = this.resolveS3(app, spec);
+      url = `s3://${target.bucket}/${target.prefix}`;
+      if (!current || current.url !== url) {
+        try {
+          await this.probeS3(target);
+        } catch (e) {
+          throw new Error(`storage: ${app}: bucket ${target.bucket} is not reachable with the SPACE_S3_* credentials: ${(e as Error).message}`);
+        }
+        if (current) this.log(`[storage] ${app}: blob store moved from ${current.url} to ${url}; nothing was copied`);
+      }
+    }
+    const now = Date.now();
+    if (current) {
+      await this.db.sql`UPDATE storage_blob_stores SET url = ${url}, orphaned = ${false}, updated_at = ${now} WHERE app = ${app}`;
+    } else {
+      await this.db.sql`INSERT INTO storage_blob_stores (app, backend, url, orphaned, created_at, updated_at)
+        VALUES (${app}, ${spec.backend}, ${url}, ${false}, ${now}, ${now})`;
+    }
+    return { createdPath };
+  }
+
+  private resolveS3(app: string, spec: BlobSpec): S3Target {
+    if (!this.s3) throw new Error(`storage: ${app} needs an s3 blob store but SPACE_S3_ACCESS_KEY_ID / SPACE_S3_SECRET_ACCESS_KEY are not set`);
+    const bucket = spec.bucket ?? this.s3.bucket;
+    if (!bucket) throw new Error(`storage: ${app}: storage.blobs names no bucket and SPACE_S3_BUCKET is not set`);
+    const prefix = spec.prefix === undefined ? `${app}/` : spec.prefix && !spec.prefix.endsWith("/") ? `${spec.prefix}/` : spec.prefix;
+    return { ...this.s3, bucket, prefix };
+  }
+
   private async upsert(d: Omit<ProvisionedDatabase, "createdAt" | "updatedAt">, current: ProvisionedDatabase | undefined): Promise<void> {
     const now = Date.now();
     if (current) {
@@ -219,8 +334,8 @@ export class StorageService {
       VALUES (${d.app}, ${d.name}, ${d.backend}, ${d.url}, ${d.source}, ${false}, ${now}, ${now})`;
   }
 
-  private async writeEnv(app: string, databases: ProvisionedDatabase[]): Promise<void> {
-    const vars = envVars(app, this.appDataDir(app), databases);
+  private async writeEnv(app: string, databases: ProvisionedDatabase[], blobs: ProvisionedBlobStore | undefined): Promise<void> {
+    const vars = envVars(app, this.appDataDir(app), databases, blobs, this.s3);
     const lines = [
       "# Generated by ai-space from the app's storage declaration. Do not edit; rewritten on every sync.",
       ...Object.entries(vars).map(([k, v]) => `${k}=${v}`),
@@ -232,13 +347,53 @@ export class StorageService {
   }
 }
 
-export function envVars(app: string, dataDir: string, databases: ProvisionedDatabase[]): Record<string, string> {
+/**
+ * Variables handed to an app. Databases: `DATABASE_URL[_NAME]`. Blob store:
+ * `BLOB_URL`, plus for s3 the `S3_*` names Bun's `S3Client` and most SDKs read
+ * by default, so an app can open the bucket without ai-space code.
+ */
+export function envVars(
+  app: string,
+  dataDir: string,
+  databases: ProvisionedDatabase[],
+  blobs?: ProvisionedBlobStore,
+  s3?: S3Config,
+): Record<string, string> {
   const vars: Record<string, string> = { SPACE_APP: app, SPACE_APP_DATA_DIR: dataDir };
   for (const d of databases) {
     if (d.orphaned) continue;
     vars[databaseEnvName(d.name)] = d.url;
   }
+  if (blobs && !blobs.orphaned) {
+    vars.BLOB_URL = blobs.url;
+    if (blobs.backend === "s3" && s3) {
+      const { bucket } = s3Parts(blobs.url);
+      if (s3.endpoint) vars.S3_ENDPOINT = s3.endpoint;
+      if (s3.region) vars.S3_REGION = s3.region;
+      vars.S3_BUCKET = bucket;
+      vars.S3_ACCESS_KEY_ID = s3.accessKeyId;
+      vars.S3_SECRET_ACCESS_KEY = s3.secretAccessKey;
+    }
+  }
   return vars;
+}
+
+/** Split `s3://bucket/prefix/` into its parts. */
+export function s3Parts(url: string): { bucket: string; prefix: string } {
+  const m = /^s3:\/\/([^/]+)\/?(.*)$/.exec(url);
+  if (!m) throw new Error(`not an s3 url: ${url}`);
+  return { bucket: m[1]!, prefix: m[2] ?? "" };
+}
+
+async function defaultProbeS3(t: S3Target): Promise<void> {
+  const client = new S3Client({
+    accessKeyId: t.accessKeyId,
+    secretAccessKey: t.secretAccessKey,
+    bucket: t.bucket,
+    ...(t.endpoint ? { endpoint: t.endpoint } : {}),
+    ...(t.region ? { region: t.region } : {}),
+  });
+  await client.list({ prefix: t.prefix, maxKeys: 1 });
 }
 
 function fromRow(r: Row): ProvisionedDatabase {
@@ -248,6 +403,17 @@ function fromRow(r: Row): ProvisionedDatabase {
     backend: r.backend as Dialect,
     url: r.url,
     source: r.source as ProvisionedDatabase["source"],
+    orphaned: r.orphaned === true || r.orphaned === 1,
+    createdAt: Number(r.created_at),
+    updatedAt: Number(r.updated_at),
+  };
+}
+
+function fromBlobRow(r: BlobRow): ProvisionedBlobStore {
+  return {
+    app: r.app,
+    backend: r.backend as BlobBackend,
+    url: r.url,
     orphaned: r.orphaned === true || r.orphaned === 1,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
@@ -266,7 +432,6 @@ function randomPassword(): string {
 
 async function exists(dir: string): Promise<boolean> {
   try {
-    const { readdir } = await import("node:fs/promises");
     await readdir(dir);
     return true;
   } catch {

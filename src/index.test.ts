@@ -36,3 +36,18 @@ test("loadConfig reads the postgres admin url", () => {
   expect(loadConfig(ws, {}).pgAdminUrl).toBe("");
   expect(loadConfig(ws, { SPACE_PG_ADMIN_URL: " postgres://admin:pw@127.0.0.1/postgres " }).pgAdminUrl).toBe("postgres://admin:pw@127.0.0.1/postgres");
 });
+
+test("loadConfig builds the s3 config only when both keys are present", () => {
+  expect(loadConfig(ws, {}).s3).toBeUndefined();
+  expect(loadConfig(ws, { SPACE_S3_ACCESS_KEY_ID: "AK" }).s3).toBeUndefined();
+  expect(
+    loadConfig(ws, {
+      SPACE_S3_ACCESS_KEY_ID: " AK ",
+      SPACE_S3_SECRET_ACCESS_KEY: "SK",
+      SPACE_S3_ENDPOINT: "https://acct.r2.cloudflarestorage.com",
+      SPACE_S3_REGION: "auto",
+      SPACE_S3_BUCKET: "media",
+    }).s3,
+  ).toEqual({ accessKeyId: "AK", secretAccessKey: "SK", endpoint: "https://acct.r2.cloudflarestorage.com", region: "auto", bucket: "media" });
+  expect(loadConfig(ws, { SPACE_S3_ACCESS_KEY_ID: "AK", SPACE_S3_SECRET_ACCESS_KEY: "SK" }).s3).toEqual({ accessKeyId: "AK", secretAccessKey: "SK" });
+});

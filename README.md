@@ -58,7 +58,7 @@ See [AGENTS.md](AGENTS.md) for the agent and contributor guide, including the co
 ## Services
 
 - **Scheduler** (`src/space/scheduler/`) - scheduled tasks for apps: `at` / `every` / `cron` schedules, `http` / `command` / `agent` targets, declared in each app's `space.yaml` and managed through `/api/tasks`. See [docs/scheduler.md](docs/scheduler.md).
-- **Storage** (`src/space/storage/`) - per-app databases on SQLite or PostgreSQL, declared in `space.yaml`, provisioned on sync and handed over through `<workspace>/data/<app>/space.env` (`DATABASE_URL`). The blob store and backups from the design are not implemented yet. See [docs/storage.md](docs/storage.md).
+- **Storage** (`src/space/storage/`) - per-app databases on SQLite or PostgreSQL and a per-app blob store on the filesystem or any S3-compatible bucket, declared in `space.yaml`, provisioned on sync and handed over through `<workspace>/data/<app>/space.env` (`DATABASE_URL`, `BLOB_URL`, `S3_*`). The managed blob API and backups from the design are not implemented yet. See [docs/storage.md](docs/storage.md).
 
 ## Status
 

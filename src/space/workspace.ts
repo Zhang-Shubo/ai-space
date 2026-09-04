@@ -11,7 +11,7 @@ import { MANIFEST_FILE } from "./scheduler/manifest.ts";
  *   ~/.ai-space/
  *   ├── core/    ai-space itself (this repository), when deployed here
  *   ├── apps/    one directory per app; an app with a space.yaml is picked up automatically
- *   ├── data/    runtime state: space.db, then one directory per app (its databases and space.env)
+ *   ├── data/    runtime state: space.db, then one directory per app (its databases, blobs/ and space.env)
  *   ├── logs/
  *   └── .env     ai-space configuration and the secrets app manifests reference
  */

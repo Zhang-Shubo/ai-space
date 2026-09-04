@@ -6,7 +6,7 @@ import { Database } from "bun:sqlite";
 import { ensureWorkspace, type Workspace } from "../workspace.ts";
 import { createStorageRoutes } from "./api.ts";
 import { type Db, openDatabase, sqliteUrl } from "./db.ts";
-import { StorageService } from "./storage.ts";
+import { type S3Target, StorageService } from "./storage.ts";
 
 let home: string;
 let ws: Workspace;
@@ -116,6 +116,102 @@ describe("StorageService.syncApp", () => {
     const r = await storage.syncApp("plain", { databases: [] });
     expect(r.created).toEqual([join(ws.data, "plain")]);
     expect(await envLines("plain")).toEqual({ SPACE_APP: "plain", SPACE_APP_DATA_DIR: join(ws.data, "plain") });
+  });
+});
+
+describe("StorageService.syncApp blobs", () => {
+  const s3 = { accessKeyId: "AK", secretAccessKey: "SK", endpoint: "https://s3.example", region: "auto", bucket: "default-bucket" };
+
+  async function withS3(probe?: (t: S3Target) => Promise<void>) {
+    return StorageService.open({ ws, db, s3, probeS3: probe ?? (async () => {}), log: () => {} });
+  }
+
+  test("file backend creates the directory and hands over a file url", async () => {
+    const r = await storage.syncApp("my-app", { databases: [], blobs: { backend: "file" } });
+    const dir = join(ws.data, "my-app", "blobs");
+    expect(r.created).toEqual([join(ws.data, "my-app"), dir]);
+    expect(r.blobs).toMatchObject({ app: "my-app", backend: "file", url: `file://${dir}`, orphaned: false });
+    expect((await stat(dir)).isDirectory()).toBe(true);
+    expect(await envLines("my-app")).toEqual({ SPACE_APP: "my-app", SPACE_APP_DATA_DIR: join(ws.data, "my-app"), BLOB_URL: `file://${dir}` });
+    // Idempotent.
+    expect((await storage.syncApp("my-app", { databases: [], blobs: { backend: "file" } })).created).toEqual([]);
+  });
+
+  test("s3 backend probes the bucket once and writes BLOB_URL plus S3_* credentials", async () => {
+    const probes: S3Target[] = [];
+    const svc = await withS3(async (t) => {
+      probes.push(t);
+    });
+    const r = await svc.syncApp("my-app", { databases: [], blobs: { backend: "s3" } });
+    expect(r.blobs).toMatchObject({ backend: "s3", url: "s3://default-bucket/my-app/" });
+    expect(probes).toEqual([{ ...s3, bucket: "default-bucket", prefix: "my-app/" }]);
+    expect(await envLines("my-app")).toEqual({
+      SPACE_APP: "my-app",
+      SPACE_APP_DATA_DIR: join(ws.data, "my-app"),
+      BLOB_URL: "s3://default-bucket/my-app/",
+      S3_ENDPOINT: "https://s3.example",
+      S3_REGION: "auto",
+      S3_BUCKET: "default-bucket",
+      S3_ACCESS_KEY_ID: "AK",
+      S3_SECRET_ACCESS_KEY: "SK",
+    });
+
+    // A re-sync with the same declaration does not touch the network.
+    await svc.syncApp("my-app", { databases: [], blobs: { backend: "s3" } });
+    expect(probes.length).toBe(1);
+
+    // A different bucket or prefix is probed again and recorded; data is not moved.
+    const moved = await svc.syncApp("my-app", { databases: [], blobs: { backend: "s3", bucket: "books", prefix: "" } });
+    expect(moved.blobs?.url).toBe("s3://books/");
+    expect(probes.length).toBe(2);
+    expect((await envLines("my-app")).S3_BUCKET).toBe("books");
+    expect((await envLines("my-app")).BLOB_URL).toBe("s3://books/");
+  });
+
+  test("an unreachable bucket rejects the sync before anything is recorded", async () => {
+    const svc = await withS3(async () => {
+      throw new Error("403 Forbidden");
+    });
+    await expect(svc.syncApp("my-app", { databases: [], blobs: { backend: "s3" } })).rejects.toThrow(/not reachable.*403/);
+    expect(await svc.blobStore("my-app")).toBeUndefined();
+  });
+
+  test("s3 without credentials or without a bucket fails clearly", async () => {
+    await expect(storage.syncApp("my-app", { databases: [], blobs: { backend: "s3" } })).rejects.toThrow(/SPACE_S3_ACCESS_KEY_ID/);
+    const noBucket = await StorageService.open({ ws, db, s3: { accessKeyId: "a", secretAccessKey: "b" }, probeS3: async () => {}, log: () => {} });
+    await expect(noBucket.syncApp("my-app", { databases: [], blobs: { backend: "s3" } })).rejects.toThrow(/SPACE_S3_BUCKET/);
+    expect((await noBucket.syncApp("my-app", { databases: [], blobs: { backend: "s3", bucket: "named" } })).blobs?.url).toBe("s3://named/my-app/");
+  });
+
+  test("refuses to switch blob backends by sync", async () => {
+    const svc = await withS3();
+    await svc.syncApp("my-app", { databases: [], blobs: { backend: "file" } });
+    await expect(svc.syncApp("my-app", { databases: [], blobs: { backend: "s3" } })).rejects.toThrow(/not supported/);
+  });
+
+  test("a store that leaves the manifest is orphaned, kept, and dropped from space.env", async () => {
+    await storage.syncApp("my-app", { databases: [{ name: "main", backend: "sqlite" }], blobs: { backend: "file" } });
+    const r = await storage.syncApp("my-app", { databases: [{ name: "main", backend: "sqlite" }] });
+    expect(r.orphaned).toEqual(["blobs"]);
+    expect(r.blobs?.orphaned).toBe(true);
+    expect(await readdir(join(ws.data, "my-app"))).toContain("blobs");
+    expect(Object.keys(await envLines("my-app"))).toEqual(["SPACE_APP", "SPACE_APP_DATA_DIR", "DATABASE_URL"]);
+
+    const back = await storage.syncApp("my-app", { databases: [{ name: "main", backend: "sqlite" }], blobs: { backend: "file" } });
+    expect(back.created).toEqual([]);
+    expect(back.blobs?.orphaned).toBe(false);
+    expect((await envLines("my-app")).BLOB_URL).toBe(`file://${join(ws.data, "my-app", "blobs")}`);
+  });
+
+  test("describe reports the store without credentials", async () => {
+    const svc = await withS3();
+    await svc.syncApp("my-app", { databases: [], blobs: { backend: "s3", prefix: "media" } });
+    const d = await svc.describe("my-app");
+    expect(d.blobs).toEqual(expect.objectContaining({ backend: "s3", orphaned: false, env: "BLOB_URL", bucket: "default-bucket", prefix: "media/" }));
+    expect(JSON.stringify(d)).not.toContain("SK");
+    expect(JSON.stringify(d)).not.toContain("AK");
+    expect(await svc.listApps()).toEqual(["my-app"]);
+    expect((await svc.envFor("my-app")).S3_SECRET_ACCESS_KEY).toBe("SK");
   });
 });
 

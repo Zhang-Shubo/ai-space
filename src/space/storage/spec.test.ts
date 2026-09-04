@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseStorageSpec } from "./spec.ts";
+import { parsePrefix, parseStorageSpec } from "./spec.ts";
 import { databaseEnvName } from "./types.ts";
 
 describe("parseStorageSpec", () => {
@@ -32,6 +32,40 @@ describe("parseStorageSpec", () => {
     expect(() => parseStorageSpec({ databases: ["a", "a"] })).toThrow(/duplicate/);
     expect(() => parseStorageSpec({ databases: ["../x"] })).toThrow(/name/);
   });
+});
+
+describe("parseStorageSpec blobs", () => {
+  test("short forms", () => {
+    expect(parseStorageSpec({ blobs: "none" })).toEqual({ databases: [] });
+    expect(parseStorageSpec({ blobs: "file" })).toEqual({ databases: [], blobs: { backend: "file" } });
+    expect(parseStorageSpec({ database: "sqlite", blobs: "s3" })).toEqual({
+      databases: [{ name: "main", backend: "sqlite" }],
+      blobs: { backend: "s3" },
+    });
+  });
+
+  test("mapping form with bucket and prefix", () => {
+    expect(parseStorageSpec({ blobs: { backend: "s3", bucket: "media", prefix: "" } })).toEqual({
+      databases: [],
+      blobs: { backend: "s3", bucket: "media", prefix: "" },
+    });
+    expect(parseStorageSpec({ blobs: { backend: "s3", prefix: "/photos/2026" } }).blobs).toEqual({ backend: "s3", prefix: "photos/2026/" });
+  });
+
+  test("rejects bad input", () => {
+    expect(() => parseStorageSpec({ blobs: "gcs" })).toThrow(/file or s3/);
+    expect(() => parseStorageSpec({ blobs: ["s3"] })).toThrow(/mapping/);
+    expect(() => parseStorageSpec({ blobs: { backend: "file", bucket: "x" } })).toThrow(/only applies to the s3/);
+    expect(() => parseStorageSpec({ blobs: { backend: "s3", prefix: "../x" } })).toThrow(/invalid prefix/);
+    expect(() => parseStorageSpec({ blobs: { backend: "s3", bucket: "bad name" } })).toThrow(/bucket/);
+  });
+});
+
+test("parsePrefix normalises slashes", () => {
+  expect(parsePrefix("", "p")).toBe("");
+  expect(parsePrefix("a", "p")).toBe("a/");
+  expect(parsePrefix("//a/b/", "p")).toBe("a/b/");
+  expect(() => parsePrefix("a//b", "p")).toThrow(/invalid prefix/);
 });
 
 test("databaseEnvName", () => {

@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
-import { StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
+import { type S3Config, StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
 import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolveHome } from "./space/workspace.ts";
 
 /**
@@ -24,6 +24,8 @@ export type Config = {
   maxConcurrency: number;
   /** Superuser URL used only to create per-app postgres databases; empty disables postgres provisioning. */
   pgAdminUrl: string;
+  /** Credentials for per-app s3 blob stores (SPACE_S3_*); undefined disables the s3 backend. */
+  s3?: S3Config;
 };
 
 export function loadConfig(ws: Workspace, env: Record<string, string | undefined> = process.env): Config {
@@ -39,13 +41,24 @@ export function loadConfig(ws: Workspace, env: Record<string, string | undefined
     apiToken: env.SPACE_API_TOKEN?.trim() ?? "",
     maxConcurrency: Math.max(1, Number(env.SPACE_MAX_CONCURRENCY ?? 2) || 2),
     pgAdminUrl: env.SPACE_PG_ADMIN_URL?.trim() ?? "",
+    ...(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim()
+      ? {
+          s3: {
+            accessKeyId: env.SPACE_S3_ACCESS_KEY_ID.trim(),
+            secretAccessKey: env.SPACE_S3_SECRET_ACCESS_KEY.trim(),
+            ...(env.SPACE_S3_ENDPOINT?.trim() ? { endpoint: env.SPACE_S3_ENDPOINT.trim() } : {}),
+            ...(env.SPACE_S3_REGION?.trim() ? { region: env.SPACE_S3_REGION.trim() } : {}),
+            ...(env.SPACE_S3_BUCKET?.trim() ? { bucket: env.SPACE_S3_BUCKET.trim() } : {}),
+          },
+        }
+      : {}),
   };
 }
 
 /** Open the storage service on ai-space's own database. */
 export async function openStorage(ws: Workspace, config: Config, log?: (m: string) => void): Promise<StorageService> {
   const db = await openDatabase(sqliteUrl(config.dbPath));
-  return StorageService.open({ ws, db, pgAdminUrl: config.pgAdminUrl, log });
+  return StorageService.open({ ws, db, pgAdminUrl: config.pgAdminUrl, s3: config.s3, log });
 }
 
 export async function boot(ws: Workspace, config: Config) {
@@ -57,7 +70,7 @@ export async function boot(ws: Workspace, config: Config) {
   const provision = async (manifest: Manifest) => {
     const result = await storage.syncApp(manifest.app, parseStorageSpec(manifest.storage));
     for (const p of result.created) console.log(`[storage] ${manifest.app}: created ${p}`);
-    for (const n of result.orphaned) console.log(`[storage] ${manifest.app}: database ${n} left the manifest, kept as orphaned`);
+    for (const n of result.orphaned) console.log(`[storage] ${manifest.app}: ${n} left the manifest, kept as orphaned`);
   };
 
   const appDirs = [...(await discoverApps(ws)), ...config.extraAppDirs];
@@ -100,9 +113,10 @@ export async function boot(ws: Workspace, config: Config) {
 if (import.meta.main) {
   const command = process.argv[2] ?? "start";
   const { ws, created } = await ensureWorkspace(resolveHome());
-  for (const p of created) console.log(`[space] created ${p}`);
+  // stderr, so `eval "$(bun src/index.ts env <app>)"` only sees the variables.
+  for (const p of created) console.error(`[space] created ${p}`);
   if (command === "init") {
-    console.log(`[space] workspace ready at ${ws.home}`);
+    console.error(`[space] workspace ready at ${ws.home}`);
     process.exit(0);
   }
   await loadWorkspaceEnv(ws);
