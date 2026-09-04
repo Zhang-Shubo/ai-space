@@ -113,7 +113,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .set-btn { left: 24px; top: 24px; }
 
 .setpop {
-  position: fixed; left: 24px; top: 80px; z-index: 31; width: 210px;
+  position: fixed; left: 24px; top: 80px; z-index: 31; width: 250px;
   background: var(--glass-strong);
   -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--glass-border); border-radius: 14px; box-shadow: var(--shadow);
@@ -125,6 +125,19 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 }
 .setrow:hover { background: var(--glass); }
 .setrow input { accent-color: var(--accent, #8b5cf6); width: 15px; height: 15px; cursor: pointer; }
+.sethead {
+  margin: 8px 10px 2px; padding-top: 8px; border-top: 1px solid var(--glass-border);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.setnote { margin: 4px 10px 6px; font-size: 12px; color: var(--muted); }
+/* One registered service: icon, title, loopback port, health. Headless services appear only here. */
+.svcrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 9px; font-size: 13px; }
+.svcrow:hover { background: var(--glass); }
+.svc-ico { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
+.svc-ico img { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; }
+.svc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-port { font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.svcrow .status { font-size: 11px; }
 
 .chat {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 40;

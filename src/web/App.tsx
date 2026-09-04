@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
 import Pet from "./Pet.tsx";
-import { type AgentInfo, type AppInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
+import { type AgentInfo, type AppInfo, type ServiceInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
 // Edit mode (long-press the background): add an app from a link, hide or delete, drag to reorder.
@@ -185,6 +185,15 @@ export default function App() {
     }
   });
   const [setsOpen, setSetsOpen] = useState(false);
+  // Services: every app with a service, headless ones included. Loaded each time the pop-over opens
+  // so the health dots are fresh (the server caches probes for 15 s).
+  const [services, setServices] = useState<ServiceInfo[] | null>(null);
+  useEffect(() => {
+    if (!setsOpen) return;
+    getJson<{ services: ServiceInfo[] }>("/api/services")
+      .then((d) => setServices(d.services || []))
+      .catch(() => setServices([]));
+  }, [setsOpen]);
   const togglePref = (k: keyof Prefs) =>
     setPrefs((p) => {
       const n = { ...p, [k]: !p[k] };
@@ -476,6 +485,26 @@ export default function App() {
             Dark mode
             <input type="checkbox" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
           </label>
+          <p className="sethead">Services</p>
+          {services === null ? (
+            <p className="setnote">Loading…</p>
+          ) : services.length ? (
+            services.map((s) => (
+              <div key={s.app} className="svcrow" title={`${s.app} · 127.0.0.1:${s.port}${s.headless ? " · no page" : ""}${s.hidden ? " · hidden" : ""}`}>
+                <span className="svc-ico">
+                  <Icon icon={s.icon} fallback="📦" />
+                </span>
+                <span className="svc-name">{s.title}</span>
+                <span className="svc-port">:{s.port}</span>
+                <span className={`status ${s.status === "active" ? s.health : s.status}`}>
+                  <i />
+                  {s.status === "active" ? HEALTH[s.health] || "?" : STATUS[s.status]}
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="setnote">No services registered</p>
+          )}
         </div>
       )}
       <Chat

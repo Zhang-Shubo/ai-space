@@ -3,20 +3,21 @@ import type { Workspace } from "../workspace.ts";
 import type { HealthProbe } from "./health.ts";
 import { type LayoutStore, orderBy } from "./layout.ts";
 import { createLinkApp, parseLinkApp, removeLinkApp, resolveLinkWithAgent } from "./links.ts";
-import type { AppRegistry } from "./registry.ts";
-import { type AppView, appView } from "./view.ts";
+import type { AppRegistry, RegisteredApp } from "./registry.ts";
+import { type AppView, type ServiceView, appView, isHeadless, serviceView } from "./view.ts";
 import { type WidgetFeed, sourceUrl } from "./widgets.ts";
 
 /**
  * HTTP surface for the panel, shaped as a Bun.serve `routes` table.
  *
- *   GET    /api/apps                     visible apps with agents and widgets (?all=1 includes hidden)
+ *   GET    /api/apps                     visible apps with agents and widgets (?all=1 includes hidden and headless)
  *   POST   /api/apps                     { link } or identity fields: create a manifest-only app
  *   GET    /api/apps/:app
  *   PATCH  /api/apps/:app                { hidden }
  *   DELETE /api/apps/:app                manifest-only apps only
  *   GET    /api/apps/:app/icon
  *   GET    /api/agents/:app/:agent/avatar
+ *   GET    /api/services                 every app that declares a service, with its health
  *   GET    /api/widgets                  every widget's latest payload
  *   GET    /api/widgets/:app/:name/embed the page of a `kind: embed` widget, proxied from its source
  *   GET    /api/panel/layout             order + hidden
@@ -69,19 +70,30 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
     return entry;
   };
 
-  const viewOf = async (name: string, hidden: Set<string>): Promise<AppView> => {
-    const entry = entryOf(name);
+  const healthOf = async (entry: RegisteredApp) => {
     const s = entry.manifest.service;
-    const h = s?.health && entry.manifest.status === "active" ? await health.check(s.port, s.health) : undefined;
-    return appView(entry, { hidden: hidden.has(name), health: h });
+    return s?.health && entry.manifest.status === "active" ? await health.check(s.port, s.health) : undefined;
   };
 
+  const viewOf = async (name: string, hidden: Set<string>): Promise<AppView> => {
+    const entry = entryOf(name);
+    return appView(entry, { hidden: hidden.has(name), health: await healthOf(entry) });
+  };
+
+  // The grid: not archived, not hidden by the operator, and not a headless service (those live
+  // under Services). Agents and widgets of a headless app still show; only the tile is gone.
   const listApps = async (all: boolean): Promise<AppView[]> => {
     const lay = layout.read();
     const hidden = new Set(lay.hidden);
-    const entries = registry.list().filter((e) => all || (!hidden.has(e.manifest.app) && e.manifest.status !== "archived"));
+    const entries = registry.list().filter((e) => all || (!hidden.has(e.manifest.app) && e.manifest.status !== "archived" && !isHeadless(e.manifest)));
     const views = await Promise.all(entries.map((e) => viewOf(e.manifest.app, hidden)));
     return orderBy(views, lay.order.apps, (v) => v.name);
+  };
+
+  const listServices = async (): Promise<ServiceView[]> => {
+    const hidden = new Set(layout.read().hidden);
+    const rows = await Promise.all(registry.list().map(async (e) => serviceView(e, { hidden: hidden.has(e.manifest.app), health: await healthOf(e) })));
+    return rows.filter((r): r is ServiceView => r !== undefined);
   };
 
   return {
@@ -147,6 +159,10 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
         if (!a) throw new NotFound(`unknown agent: ${req.params.app}/${req.params.agent}`);
         return serveFile(m.dir, a.avatar ?? m.icon ?? "");
       }),
+    },
+
+    "/api/services": {
+      GET: wrap(async () => json({ ok: true, services: await listServices(), asOf: new Date().toISOString() })),
     },
 
     "/api/widgets": {

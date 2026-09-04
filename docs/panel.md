@@ -18,9 +18,11 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 
 | Section | Source | Notes |
 | --- | --- | --- |
-| Apps | every registered manifest with `status` other than `archived`, minus the hidden set | Tile: `icon`, `title`, a health dot when the app declares `service.health`. Click opens `url`, else the repository. Hover shows the description and status. |
+| Apps | every registered manifest with `status` other than `archived`, minus the hidden set and the headless services | Tile: `icon`, `title`, a health dot when the app declares `service.health`. Click opens `url`, else the repository. Hover shows the description and status. |
 | Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title; click opens the chat drawer on that agent. |
 | Widgets | `widgets:` of every visible app | `items` cards render the list in the house style; `embed` cards load the app's page in a sandboxed iframe through ai-space. |
+
+| Services (in the settings pop-over) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. This is where **headless services** live: an app with a `service` and no `url` has nothing to open, so it gets no tile. It is still registered, scheduled and probed, and its agents and widgets (if any) show in their sections. |
 
 The **space agent** (`space/assistant`) is the default chat identity: a claude session in the workspace root with a short built-in prompt. It is the one exception to "nothing exists outside an app", on the same footing as the Space services themselves.
 
@@ -67,7 +69,8 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | Route | Purpose |
 | --- | --- |
 | `GET /` and the PWA files | the web UI |
-| `GET /api/apps`, `GET /api/apps/:app` | app views (`?all=1` includes hidden apps) |
+| `GET /api/apps`, `GET /api/apps/:app` | app views (`?all=1` includes hidden apps and headless services) |
+| `GET /api/services` | every app with a `service`: port and health, for the settings pop-over |
 | `POST /api/apps` | create a manifest-only app from `{ link }` or identity fields |
 | `PATCH /api/apps/:app` | `{ hidden }` |
 | `DELETE /api/apps/:app` | manifest-only apps only |

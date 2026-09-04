@@ -55,7 +55,10 @@ widgets:
   await writeFile(join(ws.apps, "docs", "space.yaml"), "name: docs\ntitle: Docs\nicon: '📚'\nurl: https://docs.example.com\nwidgets:\n  - { name: w, source: /api/widget }\n");
   await mkdir(join(ws.apps, "old"), { recursive: true });
   await writeFile(join(ws.apps, "old", "space.yaml"), "name: old\nstatus: archived\n");
-  for (const n of ["notes", "docs", "old"]) await registry.set(await loadManifest(join(ws.apps, n)));
+  // A headless service: runs on loopback, has no page, so no tile.
+  await mkdir(join(ws.apps, "feed", ".git"), { recursive: true });
+  await writeFile(join(ws.apps, "feed", "space.yaml"), "name: feed\ntitle: Feed\nicon: '📡'\nservice: { command: bun src/server.ts, port: 8713, health: /healthz }\n");
+  for (const n of ["notes", "docs", "old", "feed"]) await registry.set(await loadManifest(join(ws.apps, n)));
 
   const db = new Database(":memory:");
   server = Bun.serve({
@@ -96,9 +99,19 @@ describe("panel api", () => {
     expect(notes).toMatchObject({ title: "Notes", icon: "/api/apps/notes/icon", url: "https://notes.example.com", manifestOnly: false, hidden: false, service: { port: 8712, health: "ok" } });
     expect(notes.agents[0]).toMatchObject({ id: "notes/librarian", title: "Librarian", avatar: "/api/apps/notes/icon" });
     expect(notes.widgets[0]).toMatchObject({ id: "notes/recent", link: "https://notes.example.com/#recent", size: "2x1" });
-    expect(r.body.apps[0]).toMatchObject({ name: "docs", icon: "📚", manifestOnly: true });
+    expect(r.body.apps[0]).toMatchObject({ name: "docs", icon: "📚", manifestOnly: true, headless: false });
     expect(JSON.stringify(r.body)).not.toContain("8712/api");
-    expect((await call("/api/apps?all=1")).body.apps.map((a: Body) => a.name)).toEqual(["docs", "notes", "old"]);
+    expect((await call("/api/apps?all=1")).body.apps.map((a: Body) => a.name)).toEqual(["docs", "feed", "notes", "old"]);
+  });
+
+  test("headless services have no tile but are listed under services with their health", async () => {
+    expect((await call("/api/apps/feed")).body.app).toMatchObject({ name: "feed", headless: true, hidden: false, service: { port: 8713, health: "ok" } });
+    const r = await call("/api/services");
+    expect(r.status).toBe(200);
+    expect(r.body.services).toEqual([
+      { app: "feed", title: "Feed", icon: "📡", port: 8713, health: "ok", status: "active", headless: true, hidden: false },
+      { app: "notes", title: "Notes", icon: "/api/apps/notes/icon", port: 8712, health: "ok", status: "active", headless: false, hidden: false },
+    ]);
   });
 
   test("serves icons and avatars from the app directory only", async () => {
@@ -114,7 +127,7 @@ describe("panel api", () => {
     const put = await call("/api/panel/layout", jsonInit("PUT", { order: { apps: ["notes", "docs"] }, hidden: ["docs"] }));
     expect(put.body.layout).toEqual({ order: { apps: ["notes", "docs"], agents: [], widgets: [] }, hidden: ["docs"] });
     expect((await call("/api/apps")).body.apps.map((a: Body) => a.name)).toEqual(["notes"]);
-    expect((await call("/api/apps?all=1")).body.apps.map((a: Body) => a.name)).toEqual(["notes", "docs", "old"]);
+    expect((await call("/api/apps?all=1")).body.apps.map((a: Body) => a.name)).toEqual(["notes", "docs", "feed", "old"]);
     const unhide = await call("/api/apps/docs", jsonInit("PATCH", { hidden: false }));
     expect(unhide.body.app.hidden).toBe(false);
     expect((await call("/api/apps/docs", jsonInit("PATCH", { hidden: "yes" }))).status).toBe(400);
