@@ -129,7 +129,25 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   padding: 8px 10px; border-radius: 9px; font-size: 13px; cursor: pointer; user-select: none;
 }
 .setrow:hover { background: var(--glass); }
-.setrow input { accent-color: var(--accent, #8b5cf6); width: 15px; height: 15px; cursor: pointer; }
+/* iOS-style switch: the native checkbox keeps its semantics, the pill and knob are drawn here. */
+.setrow input {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0;
+  width: 40px; height: 24px; border-radius: 12px; cursor: pointer;
+  background: var(--switch-off, rgba(120, 120, 128, 0.32));
+  position: relative; transition: background 0.22s ease;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+.setrow input::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
+  transition: transform 0.22s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.setrow input:checked { background: var(--accent, #8b5cf6); }
+.setrow input:checked::before { transform: translateX(16px); }
+.setrow input:active::before { width: 24px; }
+.setrow input:checked:active::before { transform: translateX(12px); }
+.setrow input:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #8b5cf6) 35%, transparent); }
+:root[data-theme="dark"] .setrow input { --switch-off: rgba(120, 120, 128, 0.4); }
 .sethead {
   margin: 8px 10px 2px; padding-top: 8px; border-top: 1px solid var(--glass-border);
   font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);

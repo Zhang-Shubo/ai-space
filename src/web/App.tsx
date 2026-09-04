@@ -471,19 +471,19 @@ export default function App() {
         <div className="setpop">
           <label className="setrow">
             Hover details
-            <input type="checkbox" checked={!prefs.noPop} onChange={() => togglePref("noPop")} />
+            <input type="checkbox" role="switch" checked={!prefs.noPop} onChange={() => togglePref("noPop")} />
           </label>
           <label className="setrow">
             Desk pet
-            <input type="checkbox" checked={!prefs.noPet} onChange={() => togglePref("noPet")} />
+            <input type="checkbox" role="switch" checked={!prefs.noPet} onChange={() => togglePref("noPet")} />
           </label>
           <label className="setrow">
             Widgets
-            <input type="checkbox" checked={!prefs.noWidget} onChange={() => togglePref("noWidget")} />
+            <input type="checkbox" role="switch" checked={!prefs.noWidget} onChange={() => togglePref("noWidget")} />
           </label>
           <label className="setrow">
             Dark mode
-            <input type="checkbox" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
+            <input type="checkbox" role="switch" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
           </label>
           <p className="sethead">Scheduler</p>
           <button
