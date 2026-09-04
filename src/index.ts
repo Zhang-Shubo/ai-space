@@ -1,15 +1,17 @@
 import { join, resolve } from "node:path";
-import { Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
+import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
+import { StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
 import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolveHome } from "./space/workspace.ts";
 
 /**
  * ai-space entry point.
  *
- *   bun src/index.ts        boot: ensure the workspace, sync app manifests, serve the Space API
- *   bun src/index.ts init   create the workspace (~/.ai-space by default) and exit
+ *   bun src/index.ts             boot: ensure the workspace, sync app manifests, serve the Space API
+ *   bun src/index.ts init        create the workspace (~/.ai-space by default) and exit
+ *   bun src/index.ts env <app>   print the variables storage provisioned for an app, in `export` form
  *
  * Configuration comes from the environment, then from `<workspace>/.env`
- * (process values win). See `.env.example` and `docs/scheduler.md`.
+ * (process values win). See `.env.example`, `docs/scheduler.md` and `docs/storage.md`.
  */
 
 export type Config = {
@@ -20,6 +22,8 @@ export type Config = {
   extraAppDirs: string[];
   apiToken: string;
   maxConcurrency: number;
+  /** Superuser URL used only to create per-app postgres databases; empty disables postgres provisioning. */
+  pgAdminUrl: string;
 };
 
 export function loadConfig(ws: Workspace, env: Record<string, string | undefined> = process.env): Config {
@@ -34,17 +38,34 @@ export function loadConfig(ws: Workspace, env: Record<string, string | undefined
       .map((p) => resolve(p.replace(/^~(?=$|\/)/, process.env.HOME ?? "~"))),
     apiToken: env.SPACE_API_TOKEN?.trim() ?? "",
     maxConcurrency: Math.max(1, Number(env.SPACE_MAX_CONCURRENCY ?? 2) || 2),
+    pgAdminUrl: env.SPACE_PG_ADMIN_URL?.trim() ?? "",
   };
+}
+
+/** Open the storage service on ai-space's own database. */
+export async function openStorage(ws: Workspace, config: Config, log?: (m: string) => void): Promise<StorageService> {
+  const db = await openDatabase(sqliteUrl(config.dbPath));
+  return StorageService.open({ ws, db, pgAdminUrl: config.pgAdminUrl, log });
 }
 
 export async function boot(ws: Workspace, config: Config) {
   const store = new Store(config.dbPath);
-  const scheduler = new Scheduler({ store, maxConcurrency: config.maxConcurrency });
+  const storage = await openStorage(ws, config);
+  const scheduler = new Scheduler({ store, maxConcurrency: config.maxConcurrency, envFor: (app) => storage.envFor(app) });
+
+  // Storage first, so a command task started right after sync already sees its DATABASE_URL.
+  const provision = async (manifest: Manifest) => {
+    const result = await storage.syncApp(manifest.app, parseStorageSpec(manifest.storage));
+    for (const p of result.created) console.log(`[storage] ${manifest.app}: created ${p}`);
+    for (const n of result.orphaned) console.log(`[storage] ${manifest.app}: database ${n} left the manifest, kept as orphaned`);
+  };
 
   const appDirs = [...(await discoverApps(ws)), ...config.extraAppDirs];
   for (const dir of appDirs) {
     try {
-      scheduler.syncManifest(await loadManifest(dir));
+      const manifest = await loadManifest(dir);
+      await provision(manifest);
+      scheduler.syncManifest(manifest);
     } catch (e) {
       console.error(`[space] skipping ${dir}: ${(e as Error).message}`);
     }
@@ -54,7 +75,10 @@ export async function boot(ws: Workspace, config: Config) {
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
-    routes: createRoutes({ scheduler, store, token: config.apiToken }),
+    routes: {
+      ...createRoutes({ scheduler, store, token: config.apiToken, onManifest: provision }),
+      ...createStorageRoutes({ storage, token: config.apiToken }),
+    },
     fetch: () => new Response(JSON.stringify({ ok: false, error: "not found" }), { status: 404, headers: { "content-type": "application/json" } }),
   });
   console.log(`[space] listening on http://${config.host}:${server.port} · workspace ${ws.home} · apps ${appDirs.length}`);
@@ -70,7 +94,7 @@ export async function boot(ws: Workspace, config: Config) {
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 
-  return { store, scheduler, server };
+  return { store, storage, scheduler, server };
 }
 
 if (import.meta.main) {
@@ -81,10 +105,25 @@ if (import.meta.main) {
     console.log(`[space] workspace ready at ${ws.home}`);
     process.exit(0);
   }
+  await loadWorkspaceEnv(ws);
+  const config = loadConfig(ws);
+  if (command === "env") {
+    const app = process.argv[3];
+    if (!app) {
+      console.error("[space] usage: bun src/index.ts env <app>");
+      process.exit(2);
+    }
+    const storage = await openStorage(ws, config, () => {});
+    for (const [k, v] of Object.entries(await storage.envFor(app))) console.log(`export ${k}=${shellQuote(v)}`);
+    process.exit(0);
+  }
   if (command !== "start") {
-    console.error(`[space] unknown command: ${command} (expected start or init)`);
+    console.error(`[space] unknown command: ${command} (expected start, init or env)`);
     process.exit(2);
   }
-  await loadWorkspaceEnv(ws);
-  await boot(ws, loadConfig(ws));
+  await boot(ws, config);
+}
+
+function shellQuote(v: string): string {
+  return `'${v.replace(/'/g, `'\\''`)}'`;
 }

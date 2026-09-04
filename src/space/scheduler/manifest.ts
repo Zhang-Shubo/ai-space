@@ -5,7 +5,8 @@ import { DEFAULT_TIMEOUT_MS, type Schedule, type Target } from "./types.ts";
 /**
  * App manifest (`space.yaml`) parsing.
  *
- * Only the `tasks` section is interpreted here. Each task declares one
+ * Only the `tasks` section is interpreted here; `storage` is passed through raw
+ * for the storage service. Each task declares one
  * schedule form (`at` / `every` / `schedule` for cron) and one `run` target
  * (`http` / `command` / `agent`). Parsing is strict: a bad manifest rejects
  * the whole app so nothing partially applies.
@@ -26,6 +27,8 @@ export type Manifest = {
   app: string;
   dir: string;
   tasks: ManifestTask[];
+  /** Raw `storage:` section, interpreted by the storage service. */
+  storage?: unknown;
 };
 
 export async function loadManifest(dir: string): Promise<Manifest> {
@@ -55,7 +58,7 @@ export function parseManifest(yaml: string, dir: string): Manifest {
     seen.add(t.name);
     tasks.push(t);
   });
-  return { app, dir, tasks };
+  return { app, dir, tasks, ...(doc.storage !== undefined ? { storage: doc.storage } : {}) };
 }
 
 function parseTask(raw: unknown, index: number): ManifestTask {

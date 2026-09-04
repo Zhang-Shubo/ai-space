@@ -31,3 +31,8 @@ test("loadConfig reads the environment and expands ~ in extra app dirs", () => {
   expect(c.apiToken).toBe("tok");
   expect(c.maxConcurrency).toBe(4);
 });
+
+test("loadConfig reads the postgres admin url", () => {
+  expect(loadConfig(ws, {}).pgAdminUrl).toBe("");
+  expect(loadConfig(ws, { SPACE_PG_ADMIN_URL: " postgres://admin:pw@127.0.0.1/postgres " }).pgAdminUrl).toBe("postgres://admin:pw@127.0.0.1/postgres");
+});

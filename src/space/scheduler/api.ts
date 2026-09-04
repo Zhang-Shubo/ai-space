@@ -1,4 +1,4 @@
-import { loadManifest } from "./manifest.ts";
+import { type Manifest, loadManifest } from "./manifest.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { Store } from "./store.ts";
 import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEnabled, effectiveSchedule } from "./types.ts";
@@ -24,6 +24,8 @@ export type ApiOptions = {
   store: Store;
   /** Bearer token for mutating routes; empty disables the check (rely on 127.0.0.1). */
   token?: string;
+  /** Called with a freshly loaded manifest before the scheduler syncs it (storage provisioning). */
+  onManifest?: (manifest: Manifest) => Promise<void>;
 };
 
 type Handler = (req: Request & { params: Record<string, string> }) => Response | Promise<Response>;
@@ -100,6 +102,7 @@ export function createRoutes(opts: ApiOptions): Routes {
         if (!dir) return error(404, `unknown app: ${app}`);
         const manifest = await loadManifest(dir);
         if (manifest.app !== app) return error(400, `manifest in ${dir} names app "${manifest.app}", expected "${app}"`);
+        if (opts.onManifest) await opts.onManifest(manifest);
         return json({ ok: true, sync: scheduler.syncManifest(manifest) });
       }),
     },

@@ -34,6 +34,7 @@ English is the default language of this repository. Write code identifiers, comm
 - `src/` - source code. Entry point is `src/index.ts` (boots Space services and serves the Space API). Tests sit next to the code they test and are named `*.test.ts`.
 - `src/space/` - Space layer services shared by every app. One directory per service. `workspace.ts` defines the `~/.ai-space` layout, creates it, discovers apps and loads the workspace `.env`.
 - `src/space/scheduler/` - scheduled tasks: `types.ts` (data model), `schedule.ts` (at/every/cron next-run math), `store.ts` (bun:sqlite), `targets.ts` (http/command/agent runners), `manifest.ts` (`space.yaml` parsing), `scheduler.ts` (engine), `api.ts` (HTTP routes). Design notes in `docs/scheduler.md`.
+- `src/space/storage/` - per-app storage: `types.ts` (data model), `db.ts` (open by URL on Bun's `SQL`, migrations), `spec.ts` (`storage:` manifest section), `storage.ts` (provisioning, inventory, `space.env`), `api.ts` (HTTP routes). Design notes in `docs/storage.md`.
 - `data/` - runtime data (SQLite), ignored by git.
 - `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README.
 - `package.json` - scripts and dependencies; `bun.lock` is the lockfile.

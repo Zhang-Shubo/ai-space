@@ -18,6 +18,8 @@ export type RunResult = {
 export type RunContext = {
   /** App directory; default cwd for command/agent targets and base for prompt paths. */
   appDir?: string;
+  /** Extra variables for command/agent targets, layered over the app's `.env` (storage's space.env). */
+  env?: Record<string, string>;
   signal: AbortSignal;
 };
 
@@ -88,7 +90,7 @@ function parseVerdict(raw: string): { status: RunStatus; error?: string } | unde
 
 async function runCommand(target: Extract<Target, { kind: "command" }>, ctx: RunContext): Promise<RunResult> {
   const cwd = target.cwd ?? ctx.appDir ?? process.cwd();
-  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(target.env ?? {}) };
+  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(ctx.env ?? {}), ...(target.env ?? {}) };
   // ${VAR} placeholders resolve from the scheduler environment, same as http targets,
   // so machine-specific paths (a venv python, a token) stay out of the manifest.
   return spawnAndWait(["sh", "-c", interpolate(target.command)], { cwd, env, signal: ctx.signal });
@@ -100,7 +102,7 @@ async function runAgent(target: Extract<Target, { kind: "agent" }>, ctx: RunCont
   const promptFile = Bun.file(promptPath);
   if (!(await promptFile.exists())) return { status: "error", error: `prompt file not found: ${promptPath}` };
   const prompt = await promptFile.text();
-  const env = { ...process.env, ...(await loadAppEnv(cwd)) };
+  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(ctx.env ?? {}) };
   const cmd = agentCommand(target.runtime, target.model);
   return spawnAndWait(cmd, { cwd, env, signal: ctx.signal, stdin: prompt });
 }

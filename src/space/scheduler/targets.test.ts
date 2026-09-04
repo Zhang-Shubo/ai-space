@@ -129,3 +129,14 @@ describe("env helpers", () => {
     expect(await loadAppEnv("/definitely/not/here")).toEqual({});
   });
 });
+
+describe("extra env from the scheduler", () => {
+  test("ctx.env layers over the app .env for command and agent targets", async () => {
+    const r = await runTarget(
+      { kind: "command", command: "echo $GREETING/$DATABASE_URL" },
+      { ...ctx(), env: { GREETING: "from space", DATABASE_URL: "sqlite:///x.db" } },
+    );
+    expect(r.status).toBe("ok");
+    expect(r.output).toBe("from space/sqlite:///x.db");
+  });
+});

@@ -66,3 +66,9 @@ describe("parseManifest", () => {
     expect(() => parseManifest("- not a mapping", "/d")).toThrow(/mapping/);
   });
 });
+
+test("the storage section is passed through raw for the storage service", () => {
+  const m = parseManifest("name: demo\nstorage:\n  databases: [news, { name: cache }]\ntasks: []\n", "/x");
+  expect(m.storage).toEqual({ databases: ["news", { name: "cache" }] });
+  expect("storage" in parseManifest("name: demo\ntasks: []\n", "/x")).toBe(false);
+});

@@ -33,7 +33,7 @@ const MAX_TIMER_DELAY_MS = 60_000;
 const STUCK_RUN_MS = 2 * 3_600_000;
 const ERROR_BACKOFF_MS = [30_000, 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
 
-export type Runner = (task: Task, ctx: { appDir?: string; signal: AbortSignal }) => Promise<RunResult>;
+export type Runner = (task: Task, ctx: { appDir?: string; env?: Record<string, string>; signal: AbortSignal }) => Promise<RunResult>;
 
 export type SchedulerOptions = {
   store: Store;
@@ -41,6 +41,8 @@ export type SchedulerOptions = {
   runner?: Runner;
   maxConcurrency?: number;
   log?: (message: string) => void;
+  /** Extra environment for an app's command/agent runs, e.g. the variables storage provisioned. */
+  envFor?: (app: string) => Promise<Record<string, string>>;
 };
 
 export type SyncSummary = { app: string; created: string[]; updated: string[]; orphaned: string[] };
@@ -51,6 +53,7 @@ export class Scheduler {
   private readonly runner: Runner;
   private readonly maxConcurrency: number;
   private readonly log: (message: string) => void;
+  private readonly envFor?: (app: string) => Promise<Record<string, string>>;
   private readonly appDirs = new Map<string, string>();
   private readonly inflight = new Map<string, Promise<void>>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +66,7 @@ export class Scheduler {
     this.runner = opts.runner ?? ((task, ctx) => runTarget(task.target, ctx));
     this.maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
     this.log = opts.log ?? ((m) => console.log(`[scheduler] ${m}`));
+    this.envFor = opts.envFor;
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -180,7 +184,9 @@ export class Scheduler {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), task.timeoutMs);
-    const p = this.runner(task, { appDir: this.appDirs.get(task.app), signal: controller.signal })
+    const env = this.envFor ? this.envFor(task.app) : Promise.resolve(undefined);
+    const p = env
+      .then((extra) => this.runner(task, { appDir: this.appDirs.get(task.app), env: extra, signal: controller.signal }))
       .catch((e): RunResult => ({ status: "error", error: (e as Error).message ?? String(e) }))
       .then((result) => {
         clearTimeout(timeout);
