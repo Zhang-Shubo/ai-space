@@ -30,7 +30,7 @@ Tasks are keyed by `app + name`. Run history lives in a `runs` table (last 500 p
 
 ## Registering tasks: `space.yaml`
 
-Apps declare static tasks in a `space.yaml` at their repository root. ai-space reads every directory listed in `SPACE_APPS` on boot and on `POST /api/apps/<app>/sync`.
+Apps declare static tasks in a `space.yaml` at their repository root. ai-space reads every `<workspace>/apps/*/space.yaml` (plus any directory listed in `SPACE_APPS`) on boot and on `POST /api/apps/<app>/sync`.
 
 ```yaml
 name: finance-news-feed
@@ -62,7 +62,7 @@ tasks:
 Rules:
 
 - Exactly one of `at` / `every` / `schedule` and exactly one of `run.http` / `run.command` / `run.agent` per task.
-- `${VAR}` and `${VAR:-default}` in `http` url, headers and string bodies are resolved from ai-space's own environment. Secrets stay out of the manifest.
+- `${VAR}` and `${VAR:-default}` in `http` url, headers, string bodies and in `command` strings are resolved from ai-space's own environment (`~/.ai-space/.env`). Secrets and machine-specific paths stay out of the manifest. Inside a `command`, refer to shell variables as `$VAR` (no braces) so they are left to the shell.
 - An `http` target is `ok` on any 2xx. A 2xx JSON body of `{ "status": "ok" | "error" | "skipped", "error"?: string }` overrides that verdict, so an app can report a round that failed or was skipped without returning a 5xx.
 - `command` and `agent` run with the app directory as cwd and the app's `.env` merged into the environment.
 - Sync is idempotent. A task removed from the manifest becomes `orphaned` (kept for history, never runs). A schedule change resets `nextRunAt`.

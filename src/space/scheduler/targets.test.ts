@@ -80,6 +80,13 @@ describe("command target", () => {
     expect(r.output).toContain(appDir);
   });
 
+  test("command strings get ${VAR} interpolation from the scheduler env", async () => {
+    process.env.T_ECHO = "printf";
+    const r = await runTarget({ kind: "command", command: "${T_ECHO} ${T_MISSING:-fallback}" }, ctx());
+    expect(r.status).toBe("ok");
+    expect(r.output).toBe("fallback");
+  });
+
   test("non-zero exit is an error with stderr captured", async () => {
     const r = await runTarget({ kind: "command", command: "echo bad >&2; exit 3" }, ctx());
     expect(r.status).toBe("error");

@@ -15,22 +15,45 @@ Top to bottom:
 
 The diagram source is `docs/architecture.svg`.
 
-## Development
+## Workspace
 
-Install dependencies:
+Everything ai-space owns on a machine lives in one directory, `~/.ai-space` by default (override with `SPACE_HOME`). It is created on first boot or by `bun run init`:
+
+```
+~/.ai-space/
+├── core/    ai-space itself (this repository) when deployed with deploy/
+├── apps/    one directory per app; any app with a space.yaml is scheduled automatically
+├── data/    runtime state (SQLite) and per-app data directories
+├── logs/
+└── .env     ai-space configuration plus the secrets app manifests reference via ${VAR}
+```
+
+The apps currently under `~/.awesome-agent/projects` move into `apps/` one by one.
+
+## Development
 
 ```bash
 bun install
-```
-
-Run and check:
-
-```bash
-cp .env.example .env   # then edit: port, SQLite path, app directories to sync
+bun run init           # create ~/.ai-space (idempotent)
 bun run start          # boot the Space API on 127.0.0.1:8700
 bun run dev            # hot reload
 bun run check          # typecheck + tests
 ```
+
+Local configuration goes in `~/.ai-space/.env` (see `.env.example`); process environment variables win over it.
+
+## Deployment
+
+User-level systemd, no sudo. On the target machine, with Bun installed under `~/.bun`:
+
+```bash
+ssh <host> "git init --bare ~/ai-space.git"
+scp deploy/post-receive <host>:~/ai-space.git/hooks/post-receive && ssh <host> chmod +x ~/ai-space.git/hooks/post-receive
+git remote add <host> <host>:~/ai-space.git
+git push <host> main      # checks out into ~/.ai-space/core, runs deploy/install.sh, restarts the unit
+```
+
+`deploy/install.sh` installs `deploy/ai-space.service` into `~/.config/systemd/user/`, enables linger, and restarts the service. Logs: `journalctl --user -u ai-space -f`.
 
 See [AGENTS.md](AGENTS.md) for the agent and contributor guide, including the commit format, and [CLAUDE.md](CLAUDE.md) for Bun conventions.
 

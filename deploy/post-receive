@@ -1,0 +1,12 @@
+#!/bin/bash
+# Bare-repo hook for git-push deploys: ~/ai-space.git/hooks/post-receive (chmod +x).
+# Checks out main into the workspace core/ and runs the installer, which
+# installs deps, refreshes the unit and restarts the service.
+set -e
+unset GIT_DIR
+BARE=$HOME/ai-space.git
+WORK=$HOME/.ai-space/core
+mkdir -p "$WORK"
+git --git-dir="$BARE" --work-tree="$WORK" checkout -f main
+echo "  -> checked out main to $WORK"
+bash "$WORK/deploy/install.sh"

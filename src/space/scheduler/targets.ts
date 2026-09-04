@@ -89,7 +89,9 @@ function parseVerdict(raw: string): { status: RunStatus; error?: string } | unde
 async function runCommand(target: Extract<Target, { kind: "command" }>, ctx: RunContext): Promise<RunResult> {
   const cwd = target.cwd ?? ctx.appDir ?? process.cwd();
   const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(target.env ?? {}) };
-  return spawnAndWait(["sh", "-c", target.command], { cwd, env, signal: ctx.signal });
+  // ${VAR} placeholders resolve from the scheduler environment, same as http targets,
+  // so machine-specific paths (a venv python, a token) stay out of the manifest.
+  return spawnAndWait(["sh", "-c", interpolate(target.command)], { cwd, env, signal: ctx.signal });
 }
 
 async function runAgent(target: Extract<Target, { kind: "agent" }>, ctx: RunContext): Promise<RunResult> {
