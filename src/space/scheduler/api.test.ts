@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRoutes } from "./api.ts";
@@ -11,6 +11,8 @@ let server: ReturnType<typeof Bun.serve>;
 let base = "";
 let appDir = "";
 let scheduler: Scheduler;
+// What `POST /api/apps/sync` discovers; tests add directories to it.
+const discovered: string[] = [];
 
 const auth = { authorization: "Bearer t0k", "content-type": "application/json" };
 
@@ -20,7 +22,8 @@ beforeAll(async () => {
   const store = new Store(":memory:");
   scheduler = new Scheduler({ store, log: () => {} });
   scheduler.syncManifest(await loadManifest(appDir));
-  server = Bun.serve({ port: 0, hostname: "127.0.0.1", routes: createRoutes({ scheduler, store, token: "t0k" }) });
+  discovered.push(appDir);
+  server = Bun.serve({ port: 0, hostname: "127.0.0.1", routes: createRoutes({ scheduler, store, token: "t0k", discover: async () => [...discovered] }) });
   base = `http://127.0.0.1:${server.port}`;
 });
 
@@ -82,6 +85,33 @@ describe("scheduler api", () => {
     const r = await call("/api/tasks", { method: "POST", headers: auth, body: JSON.stringify({ app: "demo", name: "x", schedule: { kind: "cron", expr: "bad" }, target: { kind: "command", command: "true" } }) });
     expect(r.status).toBe(400);
     expect(r.body.error).toMatch(/invalid cron/);
+  });
+
+  test("workspace sync registers new directories and reports broken ones", async () => {
+    const root = await mkdtemp(join(tmpdir(), "space-ws-"));
+    const fresh = join(root, "fresh");
+    const broken = join(root, "broken");
+    await mkdir(fresh);
+    await mkdir(broken);
+    await writeFile(join(fresh, "space.yaml"), "name: fresh\nstatus: paused\ntasks:\n  - name: tick\n    every: 1h\n    run: { command: 'echo tick' }\n");
+    await writeFile(join(broken, "space.yaml"), "name: broken\nbogus: 1\n");
+    discovered.push(fresh, broken);
+
+    // Unknown to the scheduler until a workspace sync has seen its directory.
+    expect((await call("/api/apps/fresh/sync", { method: "POST", headers: auth })).status).toBe(404);
+
+    const res = await call("/api/apps/sync", { method: "POST", headers: auth });
+    expect(res.status).toBe(200);
+    expect(res.body.synced.map((s: { app: string }) => s.app)).toEqual(["demo", "fresh"]);
+    expect(res.body.skipped).toEqual([{ dir: broken, error: expect.stringContaining("bogus") }]);
+    // A paused app is registered but its tasks are not scheduled.
+    expect(res.body.synced[1]).toMatchObject({ app: "fresh", created: [], orphaned: [] });
+    expect(scheduler.appDir("fresh")).toBe(fresh);
+    expect((await call("/api/apps/fresh/sync", { method: "POST", headers: auth })).status).toBe(200);
+
+    // Re-running is idempotent: nothing created twice.
+    const again = await call("/api/apps/sync", { method: "POST", headers: auth });
+    expect(again.body.synced.every((s: { created: string[] }) => s.created.length === 0)).toBe(true);
   });
 
   test("manifest override via PATCH and re-sync through the API", async () => {

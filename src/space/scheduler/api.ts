@@ -1,5 +1,5 @@
 import { type Manifest, loadManifest } from "./manifest.ts";
-import type { Scheduler } from "./scheduler.ts";
+import { Scheduler, type SyncSummary } from "./scheduler.ts";
 import type { Store } from "./store.ts";
 import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEnabled, effectiveSchedule } from "./types.ts";
 
@@ -14,6 +14,7 @@ import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEna
  *   DELETE /api/tasks/:id
  *   POST   /api/tasks/:id/run         force a run now
  *   GET    /api/tasks/:id/runs?limit  run history, newest first
+ *   POST   /api/apps/sync             discover every app directory and re-read each space.yaml
  *   POST   /api/apps/:app/sync        re-read the app's space.yaml
  *
  * Mutating routes require `Authorization: Bearer <token>` when a token is configured.
@@ -26,6 +27,8 @@ export type ApiOptions = {
   token?: string;
   /** Called with a freshly loaded manifest before the scheduler syncs it (storage provisioning). */
   onManifest?: (manifest: Manifest) => Promise<void>;
+  /** Every app directory the workspace holds right now; `POST /api/apps/sync` re-reads them all. */
+  discover?: () => Promise<string[]>;
 };
 
 type Handler = (req: Request & { params: Record<string, string> }) => Response | Promise<Response>;
@@ -50,6 +53,13 @@ export function createRoutes(opts: ApiOptions): Routes {
     const task = store.getTask(req.params.id ?? "");
     if (!task) throw new NotFound(`unknown task: ${req.params.id}`);
     return task;
+  };
+
+  // Load, provision and register one app directory. Shared by both sync routes.
+  const syncDir = async (dir: string): Promise<SyncSummary> => {
+    const manifest = await loadManifest(dir);
+    if (opts.onManifest) await opts.onManifest(manifest);
+    return scheduler.syncManifest(Scheduler.schedulable(manifest));
   };
 
   return {
@@ -95,15 +105,34 @@ export function createRoutes(opts: ApiOptions): Routes {
         }),
     },
 
+    // The workspace-wide sync: what boot does, on demand. A directory that appeared after
+    // boot is registered here; one whose manifest fails is reported and skipped, the rest
+    // still sync. Only apps the scheduler already knows can use the per-app route below.
+    "/api/apps/sync": {
+      POST: guard(async () => {
+        const dirs = opts.discover ? await opts.discover() : [];
+        const synced: SyncSummary[] = [];
+        const skipped: { dir: string; error: string }[] = [];
+        for (const dir of dirs) {
+          try {
+            synced.push(await syncDir(dir));
+          } catch (e) {
+            skipped.push({ dir, error: (e as Error).message ?? String(e) });
+          }
+        }
+        return json({ ok: true, synced, skipped });
+      }),
+    },
+
     "/api/apps/:app/sync": {
       POST: guard(async (req) => {
         const app = req.params.app ?? "";
         const dir = scheduler.appDir(app);
-        if (!dir) return error(404, `unknown app: ${app}`);
+        if (!dir) return error(404, `unknown app: ${app}; POST /api/apps/sync registers new directories`);
         const manifest = await loadManifest(dir);
         if (manifest.app !== app) return error(400, `manifest in ${dir} names app "${manifest.app}", expected "${app}"`);
         if (opts.onManifest) await opts.onManifest(manifest);
-        return json({ ok: true, sync: scheduler.syncManifest(manifest) });
+        return json({ ok: true, sync: scheduler.syncManifest(Scheduler.schedulable(manifest)) });
       }),
     },
   };

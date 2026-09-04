@@ -320,6 +320,14 @@ export class Scheduler {
 
   // ---------------------------------------------------------------- manifest sync
 
+  /**
+   * What the scheduler should see of a manifest: a paused or archived app keeps its
+   * storage and stays registered, but its tasks stop (they become orphaned on sync).
+   */
+  static schedulable(manifest: Manifest): Manifest {
+    return manifest.status === "active" ? manifest : { ...manifest, tasks: [] };
+  }
+
   /** Idempotent upsert of an app's manifest tasks; unlisted manifest tasks become orphaned. */
   syncManifest(manifest: Manifest): SyncSummary {
     const now = this.now();

@@ -108,15 +108,15 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     await registry.set(manifest);
   };
 
-  // A paused or archived app keeps its storage and stays registered, but its tasks stop.
   const syncDir = async (dir: string) => {
     const manifest = await loadManifest(dir);
     await provision(manifest);
-    scheduler.syncManifest(manifest.status === "active" ? manifest : { ...manifest, tasks: [] });
+    scheduler.syncManifest(Scheduler.schedulable(manifest));
   };
 
-  const appDirs = [...(await discoverApps(ws)), ...config.extraAppDirs];
-  for (const dir of appDirs) {
+  // Everything under apps/ plus SPACE_APPS; read again by `POST /api/apps/sync`.
+  const discover = async () => [...(await discoverApps(ws)), ...config.extraAppDirs];
+  for (const dir of await discover()) {
     try {
       await syncDir(dir);
     } catch (e) {
@@ -132,7 +132,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     // The web UI is bundled once at boot; SPACE_DEV=1 turns on Bun's dev server (hot reload) instead.
     development: process.env.SPACE_DEV === "1",
     routes: {
-      ...createRoutes({ scheduler, store, token: config.apiToken, onManifest: provision }),
+      ...createRoutes({ scheduler, store, token: config.apiToken, onManifest: provision, discover }),
       ...createStorageRoutes({ storage, token: config.apiToken }),
       ...createNotifyRoutes({ notify, store: notifyStore, token: config.apiToken, appForToken: (t) => storage.appForToken(t) }),
       ...createPanelRoutes({
