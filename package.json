@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "SPACE_DEV=1 bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "test": "bun test",
     "init": "bun src/index.ts init",
@@ -12,12 +12,16 @@
     "check": "bun run typecheck && bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "croner": "^10.0.1"
+    "croner": "^10.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   }
 }

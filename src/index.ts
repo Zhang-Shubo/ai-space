@@ -1,8 +1,11 @@
 import { join, resolve } from "node:path";
 import { NotifyService, NotifyStore, createNotifyRoutes, createTaskNotifier, loadChannels, parseNotifySpec } from "./space/notify/index.ts";
+import { SessionStore, createAgentRoutes } from "./space/agents/index.ts";
+import { AppRegistry, HealthProbe, LayoutStore, WidgetFeed, createPanelRoutes } from "./space/panel/index.ts";
 import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
 import { type S3Config, StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
 import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolveHome } from "./space/workspace.ts";
+import { createWebRoutes } from "./web/routes.ts";
 
 /**
  * ai-space entry point.
@@ -14,7 +17,7 @@ import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolv
  *
  * Configuration comes from the environment, then from `<workspace>/.env`
  * (process values win). See `.env.example`, `docs/scheduler.md`, `docs/storage.md`
- * and `docs/notify.md`.
+ * `docs/notify.md` and `docs/panel.md`.
  */
 
 export type Config = {
@@ -31,6 +34,10 @@ export type Config = {
   s3?: S3Config;
   /** Channel the scheduler reports failing tasks to (SPACE_NOTIFY_TASKS); empty disables it. */
   notifyTasks: string;
+  /** Chat model when neither the request nor the manifest names one (SPACE_CHAT_MODEL). */
+  chatModel: string;
+  /** Extra arguments for the chat runtime (SPACE_CHAT_ARGS), e.g. a permission wrapper. */
+  chatArgs: string[];
 };
 
 export function loadConfig(ws: Workspace, env: Record<string, string | undefined> = process.env): Config {
@@ -47,6 +54,8 @@ export function loadConfig(ws: Workspace, env: Record<string, string | undefined
     maxConcurrency: Math.max(1, Number(env.SPACE_MAX_CONCURRENCY ?? 2) || 2),
     pgAdminUrl: env.SPACE_PG_ADMIN_URL?.trim() ?? "",
     notifyTasks: env.SPACE_NOTIFY_TASKS?.trim() ?? "",
+    chatModel: env.SPACE_CHAT_MODEL?.trim() ?? "sonnet",
+    chatArgs: (env.SPACE_CHAT_ARGS ?? "").split(/\s+/).filter(Boolean),
     ...(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim()
       ? {
           s3: {
@@ -84,6 +93,11 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     envFor: (app) => storage.envFor(app),
     onFinish: createTaskNotifier({ notify, tasksChannel: config.notifyTasks }),
   });
+  const registry = new AppRegistry();
+  const layout = new LayoutStore(store.db);
+  const sessions = new SessionStore(store.db);
+  const health = new HealthProbe();
+  const widgets = new WidgetFeed(registry);
 
   // Storage first, so a command task started right after sync already sees its DATABASE_URL.
   const provision = async (manifest: Manifest) => {
@@ -91,14 +105,20 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     for (const p of result.created) console.log(`[storage] ${manifest.app}: created ${p}`);
     for (const n of result.orphaned) console.log(`[storage] ${manifest.app}: ${n} left the manifest, kept as orphaned`);
     notify.syncApp(manifest.app, parseNotifySpec(manifest.notify, { title: manifest.title }));
+    await registry.set(manifest);
+  };
+
+  // A paused or archived app keeps its storage and stays registered, but its tasks stop.
+  const syncDir = async (dir: string) => {
+    const manifest = await loadManifest(dir);
+    await provision(manifest);
+    scheduler.syncManifest(manifest.status === "active" ? manifest : { ...manifest, tasks: [] });
   };
 
   const appDirs = [...(await discoverApps(ws)), ...config.extraAppDirs];
   for (const dir of appDirs) {
     try {
-      const manifest = await loadManifest(dir);
-      await provision(manifest);
-      scheduler.syncManifest(manifest);
+      await syncDir(dir);
     } catch (e) {
       console.error(`[space] skipping ${dir}: ${(e as Error).message}`);
     }
@@ -109,14 +129,29 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
+    // The web UI is bundled once at boot; SPACE_DEV=1 turns on Bun's dev server (hot reload) instead.
+    development: process.env.SPACE_DEV === "1",
     routes: {
       ...createRoutes({ scheduler, store, token: config.apiToken, onManifest: provision }),
       ...createStorageRoutes({ storage, token: config.apiToken }),
       ...createNotifyRoutes({ notify, store: notifyStore, token: config.apiToken, appForToken: (t) => storage.appForToken(t) }),
+      ...createPanelRoutes({
+        ws,
+        registry,
+        layout,
+        widgets,
+        health,
+        onCreate: syncDir,
+        onRemove: async (app) => {
+          scheduler.syncManifest({ app, dir: join(ws.apps, app), spec: 1, status: "archived", agents: [], widgets: [], tasks: [] });
+        },
+      }),
+      ...createAgentRoutes({ ws, registry, layout, sessions, defaultModel: config.chatModel, extraArgs: config.chatArgs, envFor: (app) => storage.envFor(app) }),
+      ...createWebRoutes(),
     },
     fetch: () => new Response(JSON.stringify({ ok: false, error: "not found" }), { status: 404, headers: { "content-type": "application/json" } }),
   });
-  console.log(`[space] listening on http://${config.host}:${server.port} · workspace ${ws.home} · apps ${appDirs.length}`);
+  console.log(`[space] listening on http://${config.host}:${server.port} · workspace ${ws.home} · apps ${registry.list().length}`);
 
   const shutdown = async () => {
     console.log("[space] shutting down");
@@ -132,7 +167,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 
-  return { store, storage, scheduler, notify, notifyStore, server };
+  return { store, storage, scheduler, notify, notifyStore, registry, server };
 }
 
 /**

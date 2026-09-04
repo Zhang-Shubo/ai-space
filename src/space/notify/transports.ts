@@ -119,7 +119,7 @@ async function sendDiscord(out: Outgoing, fetch: Fetch): Promise<SendResult> {
     if (i === 0 && out.image) {
       const form = new FormData();
       form.set("payload_json", JSON.stringify({ content: part }));
-      form.set("files[0]", new Blob([out.image.bytes], { type: out.image.type }), `image.${ext(out.image.type)}`);
+      form.set("files[0]", new Blob([out.image.bytes as Uint8Array<ArrayBuffer>], { type: out.image.type }), `image.${ext(out.image.type)}`);
       res = await post(fetch, url, form, PHOTO_TIMEOUT_MS);
       if (!res.ok && res.status !== 429) {
         degraded = `image dropped: discord ${res.status} ${await res.text().catch(() => "")}`.trim();
