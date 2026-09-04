@@ -23,7 +23,6 @@ function Tile({
   fallback,
   name,
   href,
-  health,
   editing,
   onRemove,
   removeTitle,
@@ -36,7 +35,6 @@ function Tile({
   fallback: string;
   name: string;
   href?: string;
-  health?: string;
   editing: boolean;
   onRemove?: () => void;
   removeTitle?: string;
@@ -64,7 +62,6 @@ function Tile({
           ✕
         </button>
       )}
-      {health && <i className={`tile-health ${health}`} title={HEALTH[health] || health} />}
       <span className="tile-icon">
         <Icon icon={icon} fallback={fallback} />
       </span>
@@ -374,7 +371,6 @@ export default function App() {
                   fallback="📦"
                   name={p.title}
                   href={p.url}
-                  health={p.service?.health && p.service.health !== "unknown" ? p.service.health : undefined}
                   editing={editing}
                   onRemove={() => removeApp(p)}
                   removeTitle={p.manifestOnly ? "Delete" : "Hide"}

@@ -393,6 +393,3 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .launcher.editing .tile { cursor: grab; }
 
 /* Health dot on an app tile (service declared a health path). */
-.tile-health { position: absolute; top: -3px; left: 14px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--bg); background: var(--muted); z-index: 4; }
-.tile-health.ok { background: var(--green); }
-.tile-health.down { background: #ef4444; }
