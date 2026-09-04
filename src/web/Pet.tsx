@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
-// Desk pet: a capybara from petdex.dev (MIT, Codex sprite format, 8 columns; v1 9 rows and v2 11 rows
-// mean the same). The sheet is served at /pet.webp at half size, 96x104 per cell; swap the file to
-// change the pet, delete it to have none.
-const SHEET = "/pet.webp";
-const CW = 96;
-const CH = 104;
+// Desk pet: a sprite sheet in the Codex format (8 columns; v1 9 rows and v2 11 rows mean the same,
+// cells 12:13). The bundled default is a capybara from petdex.dev at /pet.webp, stored at half size;
+// any other sheet from petdex.dev can be shown by name (see petdex.ts). Cell size comes from the image,
+// so a half-size and a full-size sheet both draw at the same 70 px on screen. The sheet is an <img>
+// moved inside a clipping box rather than a CSS background: an image needs no CORS, and it can be
+// loaded without a Referer, which petdex's hotlink protection insists on.
+export const DEFAULT_SHEET = "/pet.webp";
+const COLS = 8;
 const STATES = {
   idle: { row: 0, frames: 6, ms: 1100 },
   right: { row: 1, frames: 8, ms: 1060 },
@@ -16,19 +18,50 @@ const STATES = {
 } as const;
 type State = keyof typeof STATES;
 const SPEED = 55; // px/s
-const W = 70; // displayed width (96 * 0.73)
+const W = 70; // displayed width
 
-export default function Pet() {
-  const [ok, setOk] = useState(false);
+type Cell = { w: number; h: number };
+
+/**
+ * `sheet` is the sprite sheet URL; when it fails to load the bundled default is shown instead and
+ * `onError` fires once so the owner can re-resolve or forget the choice.
+ */
+export default function Pet({ sheet = DEFAULT_SHEET, onError }: { sheet?: string; onError?: (sheet: string) => void }) {
+  const [loaded, setLoaded] = useState<{ src: string; cell: Cell } | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const spr = useRef<HTMLElement>(null);
+  const spr = useRef<HTMLImageElement>(null);
+  const fail = useRef(onError);
+  fail.current = onError;
 
+  // Load the sheet off-screen to learn its cell size; the previous pet stays until the new one is ready.
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => setOk(true);
-    img.src = SHEET;
-  }, []);
+    let live = true;
+    const load = (src: string, fallback: boolean) => {
+      const img = new Image();
+      img.referrerPolicy = "no-referrer";
+      img.onload = () => {
+        if (!live) return;
+        const w = img.naturalWidth / COLS;
+        const rows = Math.max(1, Math.round(img.naturalHeight / ((w * 13) / 12)));
+        setLoaded({ src, cell: { w, h: img.naturalHeight / rows } });
+      };
+      img.onerror = () => {
+        if (!live) return;
+        if (fallback) return setLoaded(null);
+        fail.current?.(src);
+        load(DEFAULT_SHEET, true);
+      };
+      img.src = src;
+    };
+    load(sheet, sheet === DEFAULT_SHEET);
+    return () => {
+      live = false;
+    };
+  }, [sheet]);
 
+  const ok = loaded !== null;
+  const CW = loaded?.cell.w ?? 1;
+  const CH = loaded?.cell.h ?? 1;
   useEffect(() => {
     if (!ok || !box.current || !spr.current) return;
     let x = Math.random() * Math.max(0, innerWidth - W);
@@ -41,7 +74,7 @@ export default function Pet() {
 
     const draw = () => {
       if (!spr.current || !box.current) return;
-      spr.current.style.backgroundPosition = `-${frame * CW}px -${STATES[state].row * CH}px`;
+      spr.current.style.transform = `translate(${-frame * CW}px, ${-STATES[state].row * CH}px)`;
       box.current.style.transform = `translate3d(${x}px,0,0)`;
     };
     const setState = (s: State) => {
@@ -101,12 +134,15 @@ export default function Pet() {
       clearTimeout(behaveTimer);
       el.removeEventListener("click", jump);
     };
-  }, [ok]);
+  }, [ok, CW, CH]);
 
-  if (!ok) return null;
+  if (!loaded) return null;
+  const scale = W / CW;
   return (
-    <div className="pet" ref={box} title="Click me">
-      <i ref={spr} style={{ backgroundImage: `url(${SHEET})` }} />
+    <div className="pet" ref={box} title="Click me" style={{ width: W, height: Math.round(CH * scale) }}>
+      <i style={{ width: CW, height: CH, transform: `scale(${scale})` }}>
+        <img ref={spr} src={loaded.src} alt="" referrerPolicy="no-referrer" draggable={false} />
+      </i>
     </div>
   );
 }

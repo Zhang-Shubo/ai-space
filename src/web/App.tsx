@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
-import Pet from "./Pet.tsx";
+import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
 import { type AgentInfo, type AppInfo, type ServiceInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
+import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
 // Edit mode (long-press the background): add an app from a link, hide or delete, drag to reorder.
@@ -163,7 +164,86 @@ function AddForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
   );
 }
 
-type Prefs = { noPop?: boolean; noPet?: boolean; noWidget?: boolean };
+type Prefs = { noPop?: boolean; noPet?: boolean; noWidget?: boolean; pet?: PetChoice };
+
+/**
+ * The pet picker in the settings pop-over: type a name from petdex.dev, the sheet URL is looked up in
+ * the public manifest and kept in the preferences. Empty means the bundled default.
+ */
+function PetField({ pet, onChange }: { pet: PetChoice | undefined; onChange: (p: PetChoice | undefined) => void }) {
+  const [query, setQuery] = useState(pet?.slug || "");
+  const [pets, setPets] = useState<PetdexPet[] | null>(null);
+  const [state, setState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "error"; text: string }>({ kind: "idle" });
+  useEffect(() => setQuery(pet?.slug || ""), [pet?.slug]);
+  const warm = () => {
+    if (pets) return;
+    loadPetdex()
+      .then(setPets)
+      .catch(() => {});
+  };
+  const apply = () => {
+    const q = query.trim();
+    if (q === (pet?.slug || "")) return;
+    if (!q) {
+      setState({ kind: "idle" });
+      return onChange(undefined);
+    }
+    setState({ kind: "busy" });
+    resolvePet(q)
+      .then((p) => {
+        if (!p) return setState({ kind: "error", text: `No pet called “${q}” on petdex.dev` });
+        setState({ kind: "idle" });
+        onChange(p);
+      })
+      .catch(() => setState({ kind: "error", text: "petdex.dev is unreachable" }));
+  };
+  const note =
+    state.kind === "busy" ? "Looking up…" : state.kind === "error" ? state.text : pet ? `${pet.name}${pet.by ? ` · by ${pet.by}` : ""}` : "Capybara (built in)";
+  return (
+    <div className="setfield">
+      <div className="setinput">
+        <input
+          list="petdex-pets"
+          placeholder="Pet name from petdex.dev"
+          value={query}
+          spellCheck={false}
+          autoComplete="off"
+          onFocus={warm}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            warm();
+          }}
+          onBlur={apply}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+        />
+        {/* Always in the DOM: the pop-over's outside-click check runs after React would have removed it. */}
+        <button
+          type="button"
+          title="Back to the default pet"
+          style={{ visibility: pet || query ? "visible" : "hidden" }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setQuery("");
+            setState({ kind: "idle" });
+            onChange(undefined);
+          }}
+        >
+          ×
+        </button>
+        <datalist id="petdex-pets">
+          {suggestPets(pets || [], query).map((p) => (
+            <option key={p.slug} value={p.slug}>
+              {p.name}
+            </option>
+          ))}
+        </datalist>
+      </div>
+      <p className={`setnote${state.kind === "error" ? " err" : ""}`}>{note}</p>
+    </div>
+  );
+}
 
 export default function App() {
   const [apps, setApps] = useState<AppInfo[]>([]);
@@ -194,12 +274,26 @@ export default function App() {
       .then((d) => setServices(d.services || []))
       .catch(() => setServices([]));
   }, [setsOpen]);
-  const togglePref = (k: keyof Prefs) =>
-    setPrefs((p) => {
-      const n = { ...p, [k]: !p[k] };
-      localStorage.setItem("panel-prefs", JSON.stringify(n));
-      return n;
-    });
+  const savePrefs = (n: Prefs) => {
+    localStorage.setItem("panel-prefs", JSON.stringify(n));
+    return n;
+  };
+  const togglePref = (k: "noPop" | "noPet" | "noWidget") => setPrefs((p) => savePrefs({ ...p, [k]: !p[k] }));
+  const setPet = (pet: PetChoice | undefined) => setPrefs((p) => savePrefs({ ...p, pet }));
+  // A chosen sheet that no longer loads (the pet was re-uploaded, or petdex is down): look the name up
+  // again and keep the new URL; until then the default pet stands in. The choice itself is kept.
+  const [petBroken, setPetBroken] = useState<string | null>(null);
+  const petSheet = prefs.pet && prefs.pet.url !== petBroken ? prefs.pet.url : DEFAULT_SHEET;
+  const onPetError = (url: string) => {
+    setPetBroken(url);
+    const slug = prefs.pet?.slug;
+    if (!slug) return;
+    resolvePet(slug)
+      .then((p) => {
+        if (p && p.url !== url) setPet(p);
+      })
+      .catch(() => {});
+  };
   useEffect(() => {
     if (!setsOpen) return;
     const close = (e: MouseEvent) => {
@@ -454,7 +548,7 @@ export default function App() {
           </section>
         )}
       </div>
-      {!prefs.noPet && <Pet />}
+      {!prefs.noPet && <Pet sheet={petSheet} onError={onPetError} />}
       {adding && (
         <AddForm
           onClose={() => setAdding(false)}
@@ -477,6 +571,7 @@ export default function App() {
             Desk pet
             <input type="checkbox" role="switch" checked={!prefs.noPet} onChange={() => togglePref("noPet")} />
           </label>
+          {!prefs.noPet && <PetField pet={prefs.pet} onChange={setPet} />}
           <label className="setrow">
             Widgets
             <input type="checkbox" role="switch" checked={!prefs.noWidget} onChange={() => togglePref("noWidget")} />

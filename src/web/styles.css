@@ -153,6 +153,22 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
 }
 .setnote { margin: 4px 10px 6px; font-size: 12px; color: var(--muted); }
+.setnote.err { color: #ef4444; }
+/* A text preference under a switch: the pet name, with a clear button once something is typed. */
+.setfield { padding: 0 10px 4px; }
+.setfield .setnote { margin: 4px 2px 2px; }
+.setinput { position: relative; }
+.setinput input {
+  width: 100%; border: 1px solid var(--glass-border); background: var(--glass);
+  border-radius: 9px; padding: 7px 28px 7px 10px; font-family: inherit; font-size: 13px; color: var(--text);
+}
+.setinput input:focus { outline: 2px solid rgba(99, 102, 241, 0.4); }
+.setinput button {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border: none; border-radius: 6px; background: none; color: var(--muted);
+  font-size: 16px; line-height: 1; cursor: pointer;
+}
+.setinput button:hover { background: var(--glass); color: var(--text); }
 /* One registered service: icon, title, loopback port, health. Headless services appear only here. */
 .svcrow { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 9px; font-size: 13px; }
 .svcrow:hover { background: var(--glass); }
@@ -360,12 +376,10 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 }
 .chat-send:disabled { opacity: 0.4; cursor: default; }
 
-.pet { position: fixed; bottom: 0; left: 0; z-index: 25; cursor: pointer; width: 70px; height: 76px; overflow: hidden; }
-.pet i {
-  display: block; width: 96px; height: 104px;
-  background-repeat: no-repeat;   
-  transform: scale(0.73); transform-origin: top left;
-}
+/* Size and scale are set inline by Pet.tsx from the sheet's cell size. */
+.pet { position: fixed; bottom: 0; left: 0; z-index: 25; cursor: pointer; overflow: hidden; }
+.pet i { display: block; position: relative; overflow: hidden; transform-origin: top left; }
+.pet img { position: absolute; left: 0; top: 0; max-width: none; display: block; }
 @media (prefers-reduced-motion: reduce) { .pet { display: none; } }
 
 @keyframes jiggle {
