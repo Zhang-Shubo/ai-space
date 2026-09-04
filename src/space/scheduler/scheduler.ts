@@ -20,7 +20,7 @@ import {
  * tasks up to the concurrency limit without awaiting them; each finished run
  * applies its result and re-ticks so waiting tasks get the freed slot.
  *
- * Rules carried over from schedule-kit and OpenClaw's cron:
+ * Rules:
  * - a task never overlaps itself (runningAt marker);
  * - every run has a hard timeout (AbortSignal);
  * - errors back off 30s → 1m → 5m → 15m → 60m, reset on success;

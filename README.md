@@ -28,8 +28,6 @@ Everything ai-space owns on a machine lives in one directory, `~/.ai-space` by d
 └── .env     ai-space configuration plus the secrets app manifests reference via ${VAR}
 ```
 
-The apps currently under `~/.awesome-agent/projects` move into `apps/` one by one.
-
 ## Development
 
 ```bash
