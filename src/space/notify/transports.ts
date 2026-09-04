@@ -74,7 +74,7 @@ async function sendTelegram(out: Outgoing, fetch: Fetch): Promise<SendResult> {
       const form = new FormData();
       for (const [k, v] of Object.entries(common)) form.set(k, String(v));
       form.set("caption", caption);
-      if ("bytes" in image) form.set("photo", new Blob([image.bytes], { type: image.type }), `photo.${ext(image.type)}`);
+      if ("bytes" in image) form.set("photo", new Blob([image.bytes as Uint8Array<ArrayBuffer>], { type: image.type }), `photo.${ext(image.type)}`);
       else form.set("photo", image.url);
       try {
         const body = await telegramCall(fetch, api("sendPhoto"), form, PHOTO_TIMEOUT_MS);
