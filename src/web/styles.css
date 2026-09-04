@@ -13,18 +13,21 @@
   --hairline: rgba(14, 17, 22, 0.08);
   --shadow: 0 8px 32px rgba(31, 38, 135, 0.08);
   --green: #34c759; --orange: #ff9500;
+  --solid: #ffffff;
   --blob-a: #c7d2fe; --blob-b: #fbcfe8; --blob-c: #a5f3fc;
 }
 :root[data-theme="dark"] {
-  --bg: #0b0e14;
+  /* A lifted dark: slate ground, brighter aurora, glass that reads as a surface rather than a hole. */
+  --bg: #1c2030;
   --text: #f1f4f8;
-  --muted: rgba(235, 235, 245, 0.58);
-  --glass: rgba(22, 26, 34, 0.55);
-  --glass-strong: rgba(22, 26, 34, 0.78);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --hairline: rgba(255, 255, 255, 0.1);
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  --blob-a: #312e81; --blob-b: #701a4d; --blob-c: #164e63;
+  --muted: rgba(235, 235, 245, 0.62);
+  --glass: rgba(255, 255, 255, 0.09);
+  --glass-strong: rgba(40, 45, 62, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --hairline: rgba(255, 255, 255, 0.12);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --solid: #2c3145;
+  --blob-a: #4f46e5; --blob-b: #9d174d; --blob-c: #0e7490;
 }
 * { box-sizing: border-box; margin: 0; }
 html, body { overflow-x: hidden; }   
@@ -58,6 +61,8 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   transition: transform 0.15s ease;
 }
 .tile:hover .tile-icon { transform: translateY(-3px) scale(1.05); }
+/* An emoji icon sits on an opaque plate; image icons bring their own background. */
+.tile-icon.solid { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
 
 .tile:focus, .tile:focus-visible { outline: none; }
 .tile:focus-visible .tile-icon { box-shadow: 0 0 0 3px var(--accent, #8b5cf6); }

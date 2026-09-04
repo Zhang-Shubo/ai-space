@@ -26,7 +26,7 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 
 Two independent axes decide where an app appears. A `url` means a person can open it: that is a tile. A `service` means a process runs: that is a row under Services. An app with both (a web app) has both; a data or background service with no page has a row and no tile, and stays registered, scheduled and probed, its agents and widgets (if any) in their own sections; a link app has a tile and no row; an app with neither (a repository that only runs tasks) appears in neither, and is still listed by `GET /api/apps?all=1`.
 
-The **space agent** (`space/assistant`) is the default chat identity: a claude session in the workspace root with a short built-in prompt. It is the one exception to "nothing exists outside an app", on the same footing as the Space services themselves.
+The **space agent** (`space/assistant`, shown as "Base") is the default chat identity: a claude session in the workspace root with a short built-in prompt. It is the one exception to "nothing exists outside an app", on the same footing as the Space services themselves.
 
 ## Manifest-only apps
 

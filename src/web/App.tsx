@@ -62,7 +62,7 @@ function Tile({
           ✕
         </button>
       )}
-      <span className="tile-icon">
+      <span className={`tile-icon ${isImgIcon(icon) ? "" : "solid"}`}>
         <Icon icon={icon} fallback={fallback} />
       </span>
       <span className="tile-name">{name}</span>
@@ -173,7 +173,7 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   // The chat opens on the space agent by default; an agent tile switches to that agent.
-  const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Space", avatar: "✨", runtime: "claude" });
+  const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", avatar: "✨", runtime: "claude" });
   const [prefs, setPrefs] = useState<Prefs>(() => {
     try {
       return (JSON.parse(localStorage.getItem("panel-prefs") || "{}") as Prefs) || {};
@@ -427,7 +427,7 @@ export default function App() {
                     {a.title}
                     <span className="status">
                       <i />
-                      {a.app === "space" ? "space" : a.id}
+                      {a.app === "space" ? "base" : a.id}
                     </span>
                   </p>
                   {a.description && <p className="pop-body">{a.description}</p>}

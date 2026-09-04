@@ -40,7 +40,7 @@ export const SPACE_APP = "space";
 export const SPACE_AGENT = "assistant";
 
 export function spaceAgentView(): AgentView {
-  return { id: `${SPACE_APP}/${SPACE_AGENT}`, app: SPACE_APP, name: SPACE_AGENT, title: "Space", description: "The workspace assistant: knows the apps, reads their manifests and files, helps operate the space.", avatar: "✨", runtime: "claude" };
+  return { id: `${SPACE_APP}/${SPACE_AGENT}`, app: SPACE_APP, name: SPACE_AGENT, title: "Base", description: "The workspace assistant: knows the apps, reads their manifests and files, helps operate the space.", avatar: "✨", runtime: "claude" };
 }
 
 function spaceAgentPrompt(ws: Workspace): string {
