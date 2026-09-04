@@ -144,6 +144,66 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .svc-port { font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
 .svcrow .status { font-size: 11px; }
 
+/* A row in the settings pop-over that opens something instead of toggling a preference. */
+.setlink { width: 100%; border: none; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; }
+.setlink span { color: var(--muted); font-size: 16px; line-height: 1; }
+
+/* Tasks drawer: the scheduler's task list, grouped by app, with run history per row. */
+.tasks {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 40;
+  width: min(480px, 94vw); display: flex; flex-direction: column;
+  background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-left: 1px solid var(--glass-border); box-shadow: var(--shadow);
+  transform: translateX(105%); transition: transform 0.28s ease;
+}
+.tasks.open { transform: none; }
+.task-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--glass-border); }
+.task-head b { font-size: 15px; }
+.task-body { flex: 1; overflow-y: auto; padding: 10px 10px 24px; }
+.task-note { font-size: 12px; color: var(--muted); padding: 10px 8px; }
+.task-group + .task-group { margin-top: 12px; }
+.task-app {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.task-app .svc-name { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.taskrow { border-radius: 10px; }
+.taskrow:hover, .taskrow.open { background: var(--glass); }
+.task-main {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 8px;
+  border: none; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.task-main .status { margin-top: 5px; }
+.taskrow.running .status i { background: var(--green); animation: pulse 1s ease-in-out infinite; }
+.taskrow.off .task-text { opacity: 0.55; }
+.task-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.task-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.task-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-badge {
+  flex: none; font-size: 10px; font-weight: 500; color: var(--muted);
+  border: 1px solid var(--glass-border); border-radius: 999px; padding: 0 6px; line-height: 1.5;
+}
+.task-sched { margin-left: auto; flex: none; font: 11px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.task-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.task-kind { margin-left: auto; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.task-detail { padding: 0 8px 10px 26px; }
+.task-desc { font-size: 12px; font-weight: 400; color: var(--muted); margin-bottom: 8px; }
+.runs { display: flex; flex-direction: column; gap: 2px; }
+.runrow { padding: 4px 6px; border-radius: 8px; font-size: 12px; font-weight: 400; }
+.runrow:hover { background: var(--glass-strong); }
+.run-line { display: flex; align-items: center; gap: 10px; }
+.run-line .status { font-size: 11px; width: 64px; }
+.run-time { color: var(--muted); }
+.run-dur { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.run-err { margin-top: 4px; font-size: 12px; color: #ef4444; word-break: break-word; }
+.run-out {
+  margin: 4px 0 2px; padding: 6px 8px; border-radius: 8px; max-height: 160px; overflow: auto;
+  background: rgba(14, 17, 22, 0.06); border: 1px solid var(--glass-border);
+  font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-word;
+}
+:root[data-theme="dark"] .run-out { background: rgba(0, 0, 0, 0.3); }
+
 .chat {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 40;
   width: min(400px, 94vw); display: flex; flex-direction: row;
@@ -361,7 +421,8 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   .pop { display: none; }
 
   
-  .chat { width: 100%; border-left: none; }
+  .chat, .tasks { width: 100%; border-left: none; }
+  .task-body { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   .chat-input { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .chat-down { bottom: calc(84px + env(safe-area-inset-bottom)); }
 

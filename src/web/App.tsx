@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
 import Pet from "./Pet.tsx";
+import Tasks from "./Tasks.tsx";
 import { type AgentInfo, type AppInfo, type ServiceInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
@@ -172,6 +173,8 @@ export default function App() {
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  // The tasks drawer shares the right edge with the chat; opening one closes the other.
+  const [tasksOpen, setTasksOpen] = useState(false);
   // The chat opens on the space agent by default; an agent tile switches to that agent.
   const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", avatar: "✨", runtime: "claude" });
   const [prefs, setPrefs] = useState<Prefs>(() => {
@@ -418,6 +421,7 @@ export default function App() {
                   editing={editing}
                   onOpen={() => {
                     setChatAgent(a);
+                    setTasksOpen(false);
                     setChatOpen(true);
                   }}
                   showPop={!prefs.noPop}
@@ -481,6 +485,18 @@ export default function App() {
             Dark mode
             <input type="checkbox" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
           </label>
+          <p className="sethead">Scheduler</p>
+          <button
+            className="setrow setlink"
+            onClick={() => {
+              setSetsOpen(false);
+              setChatOpen(false);
+              setTasksOpen(true);
+            }}
+          >
+            Scheduled tasks
+            <span>›</span>
+          </button>
           <p className="sethead">Services</p>
           {services === null ? (
             <p className="setnote">Loading…</p>
@@ -503,12 +519,14 @@ export default function App() {
           )}
         </div>
       )}
+      <Tasks open={tasksOpen} onClose={() => setTasksOpen(false)} />
       <Chat
         open={chatOpen}
         agent={chatAgent}
         onClose={() => setChatOpen(false)}
         onSwitch={(a) => {
           setChatAgent(a);
+          setTasksOpen(false);
           setChatOpen(true);
         }}
       />
@@ -518,6 +536,7 @@ export default function App() {
         onClick={() => {
           if (chatOpen) return setChatOpen(false);
           setChatAgent(agents.find((a) => a.id === "space/assistant") || chatAgent);
+          setTasksOpen(false);
           setChatOpen(true);
         }}
       >

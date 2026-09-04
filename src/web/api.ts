@@ -82,3 +82,65 @@ export const relTime = (iso: string | number) => {
   const h = Math.round(m / 60);
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 };
+
+// ---------------------------------------------------------------- scheduler
+
+export type Schedule = { kind: "at"; at: string } | { kind: "every"; everyMs: number } | { kind: "cron"; expr: string; tz?: string };
+export type RunStatus = "ok" | "error" | "skipped";
+
+/** One task as `GET /api/tasks` shows it: effective values plus state, timestamps as ISO strings. */
+export type TaskInfo = {
+  id: string;
+  app: string;
+  name: string;
+  description?: string;
+  source: "manifest" | "api";
+  orphaned: boolean;
+  enabled: boolean;
+  schedule: Schedule;
+  target: { kind: "http" | "command" | "agent" };
+  timeoutMs: number;
+  overrides: { enabled?: boolean; schedule?: Schedule };
+  state: {
+    nextRunAt?: string;
+    runningAt?: string;
+    lastRunAt?: string;
+    lastStatus?: RunStatus;
+    lastError?: string;
+    lastDurationMs?: number;
+    consecutiveErrors: number;
+  };
+};
+
+/** One run as `GET /api/tasks/:id/runs` shows it (epoch milliseconds). */
+export type RunInfo = { id: number; taskId: string; startedAt: number; endedAt: number; status: RunStatus; error?: string; output?: string };
+
+export const fmtDuration = (ms: number) => {
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+};
+
+export const scheduleText = (s: Schedule) => {
+  if (s.kind === "every") return `every ${fmtDuration(s.everyMs)}`;
+  if (s.kind === "cron") return s.tz ? `${s.expr} (${s.tz})` : s.expr;
+  return `once at ${new Date(s.at).toLocaleString()}`;
+};
+
+/** Forward-looking counterpart of relTime. */
+export const untilTime = (iso: string) => {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return "";
+  if (ms < 30_000) return "now";
+  const m = Math.round(ms / 60000);
+  if (m < 1) return "in <1 min";
+  if (m < 60) return `in ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `in ${h} h` : `in ${Math.round(h / 24)} d`;
+};

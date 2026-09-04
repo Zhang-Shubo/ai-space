@@ -23,6 +23,7 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 | Widgets | `widgets:` of every visible app | `items` cards render the list in the house style; `embed` cards load the app's page in a sandboxed iframe through ai-space. |
 
 | Services (in the settings pop-over) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. |
+| Tasks (a drawer opened from the settings pop-over) | every task the scheduler knows, grouped by app | One row per task: status dot, name, effective schedule, last outcome and duration, next run, target kind; `api` and `override` badges; disabled and orphaned tasks muted. A row expands to the last twenty runs with error text and captured output. Read-only: it uses the scheduler's `GET /api/tasks` and `GET /api/tasks/:id/runs`, which carry no token; running or toggling a task still goes through the token-guarded routes from the machine. |
 
 Two independent axes decide where an app appears. A `url` means a person can open it: that is a tile. A `service` means a process runs: that is a row under Services. An app with both (a web app) has both; a data or background service with no page has a row and no tile, and stays registered, scheduled and probed, its agents and widgets (if any) in their own sections; a link app has a tile and no row; an app with neither (a repository that only runs tasks) appears in neither, and is still listed by `GET /api/apps?all=1`.
 
@@ -101,7 +102,7 @@ src/space/panel/    registry.ts (registered manifests), layout.ts (panel_kv), he
                     api.ts (routes)
 src/space/agents/   runtime.ts (claude process + SSE), sessions.ts (chat_sessions),
                     transcript.ts, api.ts (routes, space agent)
-src/web/            index.html, main.tsx, App.tsx, Chat.tsx, Pet.tsx, styles.css, api.ts,
+src/web/            index.html, main.tsx, App.tsx, Chat.tsx, Tasks.tsx, Pet.tsx, styles.css, api.ts,
                     routes.ts (HTML import + public files), public/ (PWA shell, pet sprite)
 ```
 

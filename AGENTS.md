@@ -39,7 +39,7 @@ English is the default language of this repository. Write code identifiers, comm
 - `skills/` - shared skills apps reference as `space:<name>`; one directory per skill with a `SKILL.md`.
 - `src/space/panel/` - the panel's server side: `registry.ts` (registered manifests), `layout.ts` (order and hidden set in `space.db`), `health.ts` (service probe), `widgets.ts` (widget feed and cache), `view.ts` (API shapes), `links.ts` (manifest-only apps), `api.ts` (HTTP routes). Design notes in `docs/panel.md`.
 - `src/space/agents/` - chat with agents: `runtime.ts` (claude process, stream-json to SSE), `sessions.ts` (recent sessions), `transcript.ts` (restore from the CLI's transcripts), `api.ts` (HTTP routes and the space agent).
-- `src/web/` - the web UI, bundled by Bun's HTML import: `index.html`, `main.tsx`, `App.tsx` (launcher), `Chat.tsx` (drawer), `Pet.tsx`, `styles.css`, `api.ts` (client types), `routes.ts` (page and public files), `public/` (PWA shell, pet sprite). `bun run dev` serves it with hot reload.
+- `src/web/` - the web UI, bundled by Bun's HTML import: `index.html`, `main.tsx`, `App.tsx` (launcher), `Chat.tsx` (chat drawer), `Tasks.tsx` (scheduled tasks drawer), `Pet.tsx`, `styles.css`, `api.ts` (client types), `routes.ts` (page and public files), `public/` (PWA shell, pet sprite). `bun run dev` serves it with hot reload.
 - `data/` - runtime data (SQLite), ignored by git.
 - `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README. Service designs: `scheduler.md`, `storage.md`, `notify.md` (chat notifications, design only), `panel.md` (web UI, chat, widgets), and `app-spec.md` (the app contract).
 - `package.json` - scripts and dependencies; `bun.lock` is the lockfile.
