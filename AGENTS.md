@@ -32,6 +32,7 @@ English is the default language of this repository. Write code identifiers, comm
 ## Repository Map
 
 - `src/` - source code. Entry point is `src/index.ts`. Tests sit next to the code they test and are named `*.test.ts`.
+- `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README.
 - `package.json` - scripts and dependencies; `bun.lock` is the lockfile.
 - `tsconfig.json` - TypeScript configuration (strict, bundler mode, noEmit).
 - `AGENTS.md` - this file, the agent working guide.
