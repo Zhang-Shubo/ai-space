@@ -63,6 +63,7 @@ Rules:
 
 - Exactly one of `at` / `every` / `schedule` and exactly one of `run.http` / `run.command` / `run.agent` per task.
 - `${VAR}` and `${VAR:-default}` in `http` url, headers and string bodies are resolved from ai-space's own environment. Secrets stay out of the manifest.
+- An `http` target is `ok` on any 2xx. A 2xx JSON body of `{ "status": "ok" | "error" | "skipped", "error"?: string }` overrides that verdict, so an app can report a round that failed or was skipped without returning a 5xx.
 - `command` and `agent` run with the app directory as cwd and the app's `.env` merged into the environment.
 - Sync is idempotent. A task removed from the manifest becomes `orphaned` (kept for history, never runs). A schedule change resets `nextRunAt`.
 - Operator overrides (`enabled`, `schedule`) set through the API are kept across re-sync. Clear one by patching it to `null`.

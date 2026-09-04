@@ -62,9 +62,26 @@ async function runHttp(target: Extract<Target, { kind: "http" }>, ctx: RunContex
     }
   }
   const res = await fetch(interpolate(target.url), { method: target.method, headers, body, signal: ctx.signal });
-  const text = truncate(await res.text());
+  const raw = await res.text();
+  const text = truncate(raw);
   if (!res.ok) return { status: "error", error: `HTTP ${res.status}`, output: text };
+  // Light protocol: a 2xx JSON body may carry its own verdict, e.g. an app that
+  // skipped a round because the previous one is still running.
+  const verdict = parseVerdict(raw);
+  if (verdict) return { status: verdict.status, error: verdict.error, output: text };
   return { status: "ok", output: text };
+}
+
+function parseVerdict(raw: string): { status: RunStatus; error?: string } | undefined {
+  try {
+    const v = JSON.parse(raw) as { status?: unknown; error?: unknown };
+    if (v?.status === "ok" || v?.status === "error" || v?.status === "skipped") {
+      return { status: v.status, error: typeof v.error === "string" ? v.error : undefined };
+    }
+  } catch {
+    /* not JSON */
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------- command / agent
@@ -96,32 +113,49 @@ export function agentCommand(runtime: "claude" | "codex", model?: string): strin
   return ["codex", "exec", ...(model ? ["--model", model] : []), "-"];
 }
 
+/**
+ * Spawn and wait, honoring the abort signal. The child is started in its own
+ * process group where `setsid` exists (Linux) so a timeout kills the whole tree,
+ * not just the `sh` wrapper; without it (macOS) only the direct child is killed
+ * and grandchildren are left to finish on their own. After an abort we stop
+ * waiting on the pipes: an orphaned grandchild could otherwise hold stdout open.
+ */
 async function spawnAndWait(
   cmd: string[],
   opts: { cwd: string; env: Record<string, string | undefined>; signal: AbortSignal; stdin?: string },
 ): Promise<RunResult> {
-  const proc = Bun.spawn(cmd, {
+  const setsid = Bun.which("setsid");
+  const proc = Bun.spawn(setsid ? [setsid, ...cmd] : cmd, {
     cwd: opts.cwd,
     env: opts.env,
     stdin: opts.stdin !== undefined ? new TextEncoder().encode(opts.stdin) : "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
-  const onAbort = () => proc.kill();
-  opts.signal.addEventListener("abort", onAbort, { once: true });
-  try {
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    const output = truncate([stdout, stderr].filter(Boolean).join("\n--- stderr ---\n"));
-    if (opts.signal.aborted) return { status: "error", error: "timed out", output };
-    if (exitCode !== 0) return { status: "error", error: `exit code ${exitCode}`, output };
-    return { status: "ok", output };
-  } finally {
-    opts.signal.removeEventListener("abort", onAbort);
+  const stdout = new Response(proc.stdout).text();
+  const stderr = new Response(proc.stderr).text();
+  const aborted = new Promise<"aborted">((resolve) => opts.signal.addEventListener("abort", () => resolve("aborted"), { once: true }));
+  const outcome = await Promise.race([proc.exited, aborted]);
+
+  if (outcome === "aborted") {
+    try {
+      if (setsid) process.kill(-proc.pid, "SIGKILL");
+      else proc.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+    await Promise.race([proc.exited, Bun.sleep(1000)]);
+    const partial = await Promise.race([Promise.all([stdout, stderr]), Bun.sleep(200).then(() => ["", ""] as const)]);
+    return { status: "error", error: "timed out", output: truncate(joinOutput(partial[0], partial[1])) };
   }
+
+  const output = truncate(joinOutput(await stdout, await stderr));
+  if (outcome !== 0) return { status: "error", error: `exit code ${outcome}`, output };
+  return { status: "ok", output };
+}
+
+function joinOutput(stdout: string, stderr: string): string {
+  return [stdout, stderr].filter(Boolean).join("\n--- stderr ---\n");
 }
 
 // ---------------------------------------------------------------- env helpers

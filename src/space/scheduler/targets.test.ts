@@ -19,6 +19,7 @@ beforeAll(async () => {
         return Response.json({ got: body, auth: req.headers.get("authorization") });
       }
       if (url.pathname === "/fail") return new Response("nope", { status: 500 });
+      if (url.pathname === "/verdict") return Response.json({ status: "skipped", error: "already running" });
       if (url.pathname === "/slow") {
         await Bun.sleep(2000);
         return new Response("late");
@@ -45,6 +46,12 @@ describe("http target", () => {
     );
     expect(r.status).toBe("ok");
     expect(JSON.parse(r.output!)).toEqual({ got: '{"task":"x"}', auth: "Bearer secret" });
+  });
+
+  test("a 2xx JSON body can carry its own verdict", async () => {
+    const r = await runTarget({ kind: "http", method: "POST", url: `${base}/verdict` }, ctx());
+    expect(r.status).toBe("skipped");
+    expect(r.error).toBe("already running");
   });
 
   test("non-2xx is an error with the body kept", async () => {
