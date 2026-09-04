@@ -4,7 +4,7 @@
 
 ## Project Snapshot
 
-ai-space 是一个 AI 相关实验与工具的工作空间。项目处于初始阶段，目录结构和技术栈会随着子项目加入而演进；新增子项目时同步更新本文件的 Repository Map。
+ai-space 是一个 AI 相关实验与工具的工作空间，使用 TypeScript 编写，由 Bun 负责安装依赖、运行、测试和构建。项目处于初始阶段，目录结构会随着模块加入而演进；新增目录时同步更新本文件的 Repository Map。
 
 ## Work Style
 
@@ -18,15 +18,21 @@ ai-space 是一个 AI 相关实验与工具的工作空间。项目处于初始�
 
 ## Stack And Conventions
 
-技术栈按子项目决定，但全仓库统一遵守：
-
+- TypeScript，`strict` 模式，ESM 导入；本地文件导入带 `.ts` 后缀（`allowImportingTsExtensions`）。
+- Bun 1.3+ 作为运行时和包管理器：`bun install` / `bun run` / `bun test`，不要使用 npm、yarn、pnpm、node、ts-node、jest、vitest。
+- 优先使用 Bun 内置 API（`Bun.serve`、`Bun.file`、`bun:sqlite`、`Bun.$`），Bun 相关约定见 [CLAUDE.md](CLAUDE.md)。
+- 依赖锁定在 `bun.lock`，必须随改动一起提交。
 - 使用英文命名代码标识符；注释和文档可用中文。
 - 配置、密钥一律走环境变量或 `.env`（已在 `.gitignore` 中忽略），禁止提交任何凭据。
 - 脚本和命令写进各子项目的 README 或 `package.json` / `Makefile`，不要只存在于聊天记录中。
 
 ## Repository Map
 
+- `src/` - 源码，入口为 `src/index.ts`；测试文件与被测文件同目录，命名 `*.test.ts`。
+- `package.json` - 脚本与依赖；`bun.lock` 为锁文件。
+- `tsconfig.json` - TypeScript 配置（strict、bundler 模式、noEmit）。
 - `AGENTS.md` - 本文件，agent 工作规范。
+- `CLAUDE.md` - Bun 使用约定。
 - `.gitignore` - 全局忽略规则。
 
 新增目录时在此处补一行说明。
@@ -93,15 +99,19 @@ Agent 生成的提交同样遵守以上格式，并在 body 末尾保留工具�
 
 ## Validation
 
-各子项目在自己的 README 中定义检查命令。通用要求：
+提交前必须通过：
 
-- 提交前至少运行该子项目的 lint / typecheck / test。
-- 修改了多个子项目时，每个子项目的检查都要跑。
-- 检查失败不要绕过；确认是既有失败时在 PR 中说明证据。
+```bash
+bun install
+bun run typecheck
+bun test
+```
+
+或一步执行 `bun run check`。迭代时可用 `bun test ./src/path/to/file.test.ts` 缩小范围，但推送前仍要跑完整检查。检查失败不要绕过；确认是既有失败时在 PR 中说明证据。
 
 ## Things To Avoid
 
-- 不要在没有说明的情况下更换运行时、包管理器或构建工具。
+- 不要在没有说明的情况下更换 Bun 运行时、包管理器或构建工具，也不要引入 Node 专属工具链。
 - 不要引入没有明确收益的依赖。
 - 不要跳过行为变化的测试。
 - 不要提交 `.env`、密钥、token 或个人数据。
