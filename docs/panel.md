@@ -18,11 +18,13 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 
 | Section | Source | Notes |
 | --- | --- | --- |
-| Apps | every registered manifest with `status` other than `archived`, minus the hidden set and the headless services | Tile: `icon`, `title`, a health dot when the app declares `service.health`. Click opens `url`, else the repository. Hover shows the description and status. |
+| Apps | every registered manifest that has a `url`, with `status` other than `archived`, minus the hidden set | Tile: `icon`, `title`, a health dot when the app declares `service.health`. Click opens `url`. Hover shows the description, status and repository. |
 | Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title; click opens the chat drawer on that agent. |
 | Widgets | `widgets:` of every visible app | `items` cards render the list in the house style; `embed` cards load the app's page in a sandboxed iframe through ai-space. |
 
-| Services (in the settings pop-over) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. This is where **headless services** live: an app with a `service` and no `url` has nothing to open, so it gets no tile. It is still registered, scheduled and probed, and its agents and widgets (if any) show in their sections. |
+| Services (in the settings pop-over) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. |
+
+Two independent axes decide where an app appears. A `url` means a person can open it: that is a tile. A `service` means a process runs: that is a row under Services. An app with both (a web app) has both; a data or background service with no page has a row and no tile, and stays registered, scheduled and probed, its agents and widgets (if any) in their own sections; a link app has a tile and no row; an app with neither (a repository that only runs tasks) appears in neither, and is still listed by `GET /api/apps?all=1`.
 
 The **space agent** (`space/assistant`) is the default chat identity: a claude session in the workspace root with a short built-in prompt. It is the one exception to "nothing exists outside an app", on the same footing as the Space services themselves.
 
@@ -69,7 +71,7 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | Route | Purpose |
 | --- | --- |
 | `GET /` and the PWA files | the web UI |
-| `GET /api/apps`, `GET /api/apps/:app` | app views (`?all=1` includes hidden apps and headless services) |
+| `GET /api/apps`, `GET /api/apps/:app` | app views (`?all=1` lists every app, including hidden ones and those without a url) |
 | `GET /api/services` | every app with a `service`: port and health, for the settings pop-over |
 | `POST /api/apps` | create a manifest-only app from `{ link }` or identity fields |
 | `PATCH /api/apps/:app` | `{ hidden }` |

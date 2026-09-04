@@ -4,13 +4,13 @@ import type { HealthProbe } from "./health.ts";
 import { type LayoutStore, orderBy } from "./layout.ts";
 import { createLinkApp, parseLinkApp, removeLinkApp, resolveLinkWithAgent } from "./links.ts";
 import type { AppRegistry, RegisteredApp } from "./registry.ts";
-import { type AppView, type ServiceView, appView, isHeadless, serviceView } from "./view.ts";
+import { type AppView, type ServiceView, appView, serviceView } from "./view.ts";
 import { type WidgetFeed, sourceUrl } from "./widgets.ts";
 
 /**
  * HTTP surface for the panel, shaped as a Bun.serve `routes` table.
  *
- *   GET    /api/apps                     visible apps with agents and widgets (?all=1 includes hidden and headless)
+ *   GET    /api/apps                     apps with a url, with agents and widgets (?all=1: every app)
  *   POST   /api/apps                     { link } or identity fields: create a manifest-only app
  *   GET    /api/apps/:app
  *   PATCH  /api/apps/:app                { hidden }
@@ -80,12 +80,13 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
     return appView(entry, { hidden: hidden.has(name), health: await healthOf(entry) });
   };
 
-  // The grid: not archived, not hidden by the operator, and not a headless service (those live
-  // under Services). Agents and widgets of a headless app still show; only the tile is gone.
+  // The grid holds what a person can open: apps with a `url`, not archived, not hidden by the
+  // operator. Whether an app runs a service is a separate axis (the Services list). Agents and
+  // widgets of an app without a url still show in their sections; only the tile is absent.
   const listApps = async (all: boolean): Promise<AppView[]> => {
     const lay = layout.read();
     const hidden = new Set(lay.hidden);
-    const entries = registry.list().filter((e) => all || (!hidden.has(e.manifest.app) && e.manifest.status !== "archived" && !isHeadless(e.manifest)));
+    const entries = registry.list().filter((e) => all || (e.manifest.url && !hidden.has(e.manifest.app) && e.manifest.status !== "archived"));
     const views = await Promise.all(entries.map((e) => viewOf(e.manifest.app, hidden)));
     return orderBy(views, lay.order.apps, (v) => v.name);
   };

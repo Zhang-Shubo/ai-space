@@ -185,7 +185,7 @@ export default function App() {
     }
   });
   const [setsOpen, setSetsOpen] = useState(false);
-  // Services: every app with a service, headless ones included. Loaded each time the pop-over opens
+  // Services: every app that runs a process, with or without a page. Loaded each time the pop-over opens
   // so the health dots are fresh (the server caches probes for 15 s).
   const [services, setServices] = useState<ServiceInfo[] | null>(null);
   useEffect(() => {
@@ -373,7 +373,7 @@ export default function App() {
                   icon={p.icon}
                   fallback="📦"
                   name={p.title}
-                  href={p.url || (p.repo && repoUrl(p.repo)) || undefined}
+                  href={p.url}
                   health={p.service?.health && p.service.health !== "unknown" ? p.service.health : undefined}
                   editing={editing}
                   onRemove={() => removeApp(p)}
@@ -490,7 +490,7 @@ export default function App() {
             <p className="setnote">Loading…</p>
           ) : services.length ? (
             services.map((s) => (
-              <div key={s.app} className="svcrow" title={`${s.app} · 127.0.0.1:${s.port}${s.headless ? " · no page" : ""}${s.hidden ? " · hidden" : ""}`}>
+              <div key={s.app} className="svcrow" title={`${s.app} · 127.0.0.1:${s.port}${s.hidden ? " · hidden" : ""}`}>
                 <span className="svc-ico">
                   <Icon icon={s.icon} fallback="📦" />
                 </span>

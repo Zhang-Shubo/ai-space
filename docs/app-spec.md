@@ -81,7 +81,7 @@ repo: https://github.com/<owner>/my-app.git   # informative; set by new-app
 | `title` | string | Shown on the panel. |
 | `description` | string | One sentence, shown on the panel card and to agents. |
 | `icon` | string | Repository path to an SVG or PNG, a single emoji, or an http(s) URL. |
-| `url` | string | Public entry URL. Widget and agent links are resolved relative to it. An app with a `service` and no `url` is a **headless service**: the panel lists it under Services instead of giving it a tile. |
+| `url` | string | Public entry URL; the panel shows a tile only for apps that have one. Widget and agent links are resolved relative to it. |
 | `status` | enum | `paused` keeps the app listed but stops its tasks and service; `archived` hides it and stops everything. Storage is never dropped by a status change. |
 | `repo` | string | The origin URL. |
 
@@ -108,7 +108,7 @@ Contract for the process:
 - It answers `GET <health>` with 200 when it can serve requests. The panel shows the app as down otherwise.
 - It exits on `SIGTERM` within 10 seconds.
 
-Apps without a service (a pure agent app, a widget fed by a task) omit the section. A service without a `url` (a data or background service with no page of its own) is listed in the panel's Services view rather than on the launcher grid; see [panel](panel.md).
+Apps without a service (a pure agent app, a widget fed by a task) omit the section. Whether an app has a service is independent of whether it has a page (`url`): the panel lists every service under Services, and gives a tile only to apps with a `url`; see [panel](panel.md).
 
 ### `agents`
 

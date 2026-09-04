@@ -29,8 +29,6 @@ export type AppView = {
   status: Manifest["status"];
   manifestOnly: boolean;
   hidden: boolean;
-  /** A service with no public `url`: nothing to open, so no tile; it is listed under Services. */
-  headless: boolean;
   service?: { port: number; health: Health | "unknown" };
   agents: AgentView[];
   widgets: { id: string; name: string; title: string; kind: string; size: string; link: string }[];
@@ -44,12 +42,8 @@ export type ServiceView = {
   port: number;
   health: Health | "unknown";
   status: Manifest["status"];
-  headless: boolean;
   hidden: boolean;
 };
-
-/** An app that runs a service but has no public entry: a data or background service. */
-export const isHeadless = (m: Manifest): boolean => !!m.service && !m.url;
 
 const isEmoji = (s: string) => !/^[\w./-]/.test(s) && !/^https?:\/\//.test(s) && s.length <= 8;
 
@@ -102,7 +96,6 @@ export function appView(entry: RegisteredApp, opts: { hidden: boolean; health?: 
     status: m.status,
     manifestOnly: entry.manifestOnly,
     hidden: opts.hidden,
-    headless: isHeadless(m),
     ...(m.service ? { service: { port: m.service.port, health: opts.health ?? "unknown" } } : {}),
     agents: m.agents.map((a) => agentView(m, a)),
     widgets: m.widgets.map((w) => ({ id: `${m.app}/${w.name}`, name: w.name, title: w.title ?? m.title ?? m.app, kind: w.kind, size: w.size, link: resolveLink(m, w.link) })),
@@ -112,5 +105,5 @@ export function appView(entry: RegisteredApp, opts: { hidden: boolean; health?: 
 export function serviceView(entry: RegisteredApp, opts: { hidden: boolean; health?: Health }): ServiceView | undefined {
   const m = entry.manifest;
   if (!m.service) return undefined;
-  return { app: m.app, title: m.title ?? m.app, icon: iconUrl(m), port: m.service.port, health: opts.health ?? "unknown", status: m.status, headless: isHeadless(m), hidden: opts.hidden };
+  return { app: m.app, title: m.title ?? m.app, icon: iconUrl(m), port: m.service.port, health: opts.health ?? "unknown", status: m.status, hidden: opts.hidden };
 }

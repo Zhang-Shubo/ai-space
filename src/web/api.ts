@@ -20,7 +20,6 @@ export type AppInfo = {
   status: "active" | "paused" | "archived";
   manifestOnly: boolean;
   hidden: boolean;
-  headless: boolean;
   service?: { port: number; health: "ok" | "down" | "unknown" };
   agents: AgentInfo[];
   widgets: { id: string; name: string; title: string; kind: string; size: string; link: string }[];
@@ -33,7 +32,6 @@ export type ServiceInfo = {
   port: number;
   health: "ok" | "down" | "unknown";
   status: "active" | "paused" | "archived";
-  headless: boolean;
   hidden: boolean;
 };
 
