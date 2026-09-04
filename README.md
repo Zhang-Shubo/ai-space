@@ -14,6 +14,6 @@ bun run dev        # hot reload
 bun run check      # typecheck + tests
 ```
 
-Agent 与贡献规范见 [AGENTS.md](AGENTS.md)。
+See [AGENTS.md](AGENTS.md) for the agent and contributor guide, including the commit format.
 
 This project was created using `bun init` in bun v1.3.0. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

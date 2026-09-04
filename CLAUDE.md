@@ -1,4 +1,4 @@
-先阅读 [AGENTS.md](AGENTS.md)：工作方式、目录结构、commit 格式、校验要求都在那里。本文件只补充 Bun 使用约定。
+Read [AGENTS.md](AGENTS.md) first: work style, repository map, commit format, and validation rules live there. This file only adds Bun-specific conventions.
 
 
 Default to using Bun instead of Node.js.
