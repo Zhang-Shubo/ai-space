@@ -1,3 +1,4 @@
+import { realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { type LayoutStore, orderBy } from "../panel/layout.ts";
 import type { AppRegistry } from "../panel/registry.ts";
@@ -94,7 +95,9 @@ export function createAgentRoutes(opts: AgentsApiOptions): Routes {
       id: `${app}/${name}`,
       runtime: a.runtime,
       ...(a.model ? { model: a.model } : {}),
-      cwd: resolve(entry.manifest.dir, a.cwd),
+      // The real path: the runtime files its transcripts under the directory it actually runs in,
+      // and an app directory may be a symlink into the repository checkout.
+      cwd: await realDir(resolve(entry.manifest.dir, a.cwd)),
       systemPrompt: await systemPromptFor(entry.manifest, a),
       tools: a.tools,
       app,
@@ -172,6 +175,14 @@ async function systemPromptFor(m: Manifest, a: ManifestAgent): Promise<string | 
   const agentsMd = Bun.file(join(m.dir, "AGENTS.md"));
   if (await agentsMd.exists()) parts.push(`--- AGENTS.md ---\n${(await agentsMd.text()).slice(0, MAX_CONTEXT)}`);
   return parts.join("\n\n");
+}
+
+async function realDir(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return path;
+  }
 }
 
 class NotFound extends Error {}

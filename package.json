@@ -8,6 +8,7 @@
     "start": "bun src/index.ts",
     "test": "bun test",
     "init": "bun src/index.ts init",
+    "setup": "bun src/index.ts setup",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun test"
   },

@@ -8,7 +8,7 @@ import { AppRegistry } from "../panel/registry.ts";
 import { loadManifest } from "../scheduler/manifest.ts";
 import { workspacePaths } from "../workspace.ts";
 import { createAgentRoutes } from "./api.ts";
-import { chatArgs } from "./runtime.ts";
+import { chatArgs, chatResponse } from "./runtime.ts";
 import { SessionStore } from "./sessions.ts";
 import { parseTranscript, transcriptPath } from "./transcript.ts";
 
@@ -20,6 +20,7 @@ const resume = args.includes("--resume") ? args[args.indexOf("--resume") + 1] : 
 const sid = resume ? "cafe0002-0000-4000-8000-000000000000" : "cafe0001-0000-4000-8000-000000000000";
 const out = (o) => console.log(JSON.stringify(o));
 if (msg === "crash") { console.error("boom"); process.exit(3); }
+if (msg === "slow") await new Promise((r) => setTimeout(r, 250));
 out({ type: "system", subtype: "init", session_id: sid, model: "fake", cwd: process.cwd() });
 out({ type: "assistant", message: { content: [{ type: "text", text: "echo " + msg + " | " + args.slice(2).filter((a) => a.startsWith("--")).join(" ") + " | prompt=" + (args[args.indexOf("--append-system-prompt") + 1] ?? "").slice(0, 40) + " | cwd=" + process.cwd() }] } });
 out({ type: "result", session_id: sid, is_error: false });
@@ -102,6 +103,15 @@ describe("agents api", () => {
     expect(text).toContain(`cwd=${home}`);
     expect(text).not.toContain("--allowedTools");
     expect(text).toContain("--model");
+  });
+
+  test("keeps the stream alive with comment lines during a long tool call", async () => {
+    const r = chatResponse({ message: "slow", cwd: home }, {}, { heartbeatMs: 40 });
+    const text = await r.text();
+    expect(text.split(": keepalive\n\n").length).toBeGreaterThan(2);
+    expect(text.trim().endsWith('data: {"type":"done"}')).toBe(true);
+    // The browser's parser only reads `data:` lines; a comment never reaches it as an event.
+    expect(text.split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)).type)).toEqual(["system", "assistant", "result", "done"]);
   });
 
   test("reports a runtime failure as an error event", async () => {

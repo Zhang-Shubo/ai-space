@@ -20,3 +20,4 @@ systemctl --user restart ai-space
 sleep 2
 systemctl --user --no-pager --lines=5 status ai-space || true
 curl -fsS "http://127.0.0.1:${SPACE_PORT:-8700}/healthz" && echo
+grep -qE '^SPACE_API_TOKEN=.+' "${SPACE_HOME:-$HOME/.ai-space}/.env" || echo "next: $BUN src/index.ts setup   (fills ${SPACE_HOME:-$HOME/.ai-space}/.env interactively; see docs/install.md)"

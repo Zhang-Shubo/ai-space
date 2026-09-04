@@ -7,6 +7,7 @@ import { PeerHub, PeerStore, createPeerRoutes, createPeerServeRoutes, loadPeers 
 import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
 import { type S3Config, StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
 import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolveHome } from "./space/workspace.ts";
+import { SetupAborted, realDeps, runSetup, terminalIO } from "./space/setup.ts";
 import { createWebRoutes } from "./web/routes.ts";
 
 /**
@@ -16,6 +17,7 @@ import { createWebRoutes } from "./web/routes.ts";
  *   bun src/index.ts init                create the workspace (~/.ai-space by default) and exit
  *   bun src/index.ts env <app>           print the variables storage provisioned for an app, in `export` form
  *   bun src/index.ts notify [opts] text  send a notification through the running ai-space (see `notifyCommand`)
+ *   bun src/index.ts setup               interactive first-install walk-through that fills <workspace>/.env (see `src/space/setup.ts`)
  *
  * Configuration comes from the environment, then from `<workspace>/.env`
  * (process values win). See `.env.example`, `docs/scheduler.md`, `docs/storage.md`
@@ -287,8 +289,18 @@ if (import.meta.main) {
     process.exit(0);
   }
   if (command === "notify") process.exit(await notifyCommand(process.argv.slice(3), config));
+  if (command === "setup") {
+    try {
+      await runSetup(realDeps(terminalIO(), ws));
+    } catch (e) {
+      if (!(e instanceof SetupAborted)) throw e;
+      console.error("\n[space] setup: input closed before the end; nothing written");
+      process.exit(1);
+    }
+    process.exit(0);
+  }
   if (command !== "start") {
-    console.error(`[space] unknown command: ${command} (expected start, init, env or notify)`);
+    console.error(`[space] unknown command: ${command} (expected start, init, env, notify or setup)`);
     process.exit(2);
   }
   await boot(ws, config);

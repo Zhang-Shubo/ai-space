@@ -634,10 +634,8 @@ export default function App() {
                 <span className="svc-ico">
                   <Icon icon={s.icon} fallback="📦" />
                 </span>
-                <span className="svc-name">
-                  {s.title}
-                  {s.peer && <span className="svc-peer">{s.peer}</span>}
-                </span>
+                <span className="svc-name">{s.title}</span>
+                {s.peer && <span className="svc-peer">{s.peer}</span>}
                 <span className="svc-port">:{s.port}</span>
                 <span className={`status ${s.status === "active" ? s.health : s.status}`}>
                   <i />

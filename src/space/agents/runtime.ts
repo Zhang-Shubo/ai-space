@@ -108,29 +108,37 @@ export function chatStream(t: ChatTurn, cb: ChatCallbacks): { kill: () => void }
   return { kill: () => proc.kill() };
 }
 
+/** A long tool call emits nothing; proxies in between (a tunnel's edge) drop a stream idle for ~100 s. */
+export const HEARTBEAT_MS = 20_000;
+
 /**
  * Server-sent events adapter: the response streams every runtime event as a
  * `data:` line, then `{"type":"error"}` on failure and `{"type":"done"}`.
- * Closing the response (client gone) kills the process.
+ * A comment line every `heartbeatMs` keeps the connection alive through a
+ * long tool call. Closing the response (client gone) kills the process.
  */
-export function chatResponse(t: ChatTurn, hooks: { onSession?: (sid: string) => void } = {}): Response {
+export function chatResponse(t: ChatTurn, hooks: { onSession?: (sid: string) => void } = {}, opts: { heartbeatMs?: number } = {}): Response {
   const enc = new TextEncoder();
   let handle: { kill: () => void } | undefined;
+  let beat: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
-      const send = (line: string) => {
+      const write = (chunk: string) => {
         if (closed) return;
         try {
-          controller.enqueue(enc.encode(`data: ${line}\n\n`));
+          controller.enqueue(enc.encode(chunk));
         } catch {
           closed = true;
         }
       };
+      const send = (line: string) => write(`data: ${line}\n\n`);
+      beat = setInterval(() => write(": keepalive\n\n"), opts.heartbeatMs ?? HEARTBEAT_MS);
       handle = chatStream(t, {
         onEvent: send,
         onSession: hooks.onSession,
         onFinish: (error) => {
+          clearInterval(beat);
           if (error) send(JSON.stringify({ type: "error", error }));
           send('{"type":"done"}');
           closed = true;
@@ -143,6 +151,7 @@ export function chatResponse(t: ChatTurn, hooks: { onSession?: (sid: string) => 
       });
     },
     cancel() {
+      clearInterval(beat);
       handle?.kill();
     },
   });
