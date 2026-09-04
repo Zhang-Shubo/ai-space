@@ -22,3 +22,9 @@ __pycache__/
 
 # Logs
 *.log
+
+# Runtime data (SQLite)
+data/
+*.db
+*.db-shm
+*.db-wal

@@ -31,12 +31,16 @@ English is the default language of this repository. Write code identifiers, comm
 
 ## Repository Map
 
-- `src/` - source code. Entry point is `src/index.ts`. Tests sit next to the code they test and are named `*.test.ts`.
+- `src/` - source code. Entry point is `src/index.ts` (boots Space services and serves the Space API). Tests sit next to the code they test and are named `*.test.ts`.
+- `src/space/` - Space layer services shared by every app. One directory per service.
+- `src/space/scheduler/` - scheduled tasks: `types.ts` (data model), `schedule.ts` (at/every/cron next-run math), `store.ts` (bun:sqlite), `targets.ts` (http/command/agent runners), `manifest.ts` (`space.yaml` parsing), `scheduler.ts` (engine), `api.ts` (HTTP routes). Design notes in `docs/scheduler.md`.
+- `data/` - runtime data (SQLite), ignored by git.
 - `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README.
 - `package.json` - scripts and dependencies; `bun.lock` is the lockfile.
 - `tsconfig.json` - TypeScript configuration (strict, bundler mode, noEmit).
 - `AGENTS.md` - this file, the agent working guide.
 - `CLAUDE.md` - Bun usage conventions.
+- `.env.example` - configuration template; copy to `.env`.
 - `.gitignore` - global ignore rules.
 
 Add a line here when you add a directory.

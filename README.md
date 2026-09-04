@@ -26,13 +26,18 @@ bun install
 Run and check:
 
 ```bash
-bun run start      # run src/index.ts
-bun run dev        # hot reload
-bun run check      # typecheck + tests
+cp .env.example .env   # then edit: port, SQLite path, app directories to sync
+bun run start          # boot the Space API on 127.0.0.1:8700
+bun run dev            # hot reload
+bun run check          # typecheck + tests
 ```
 
 See [AGENTS.md](AGENTS.md) for the agent and contributor guide, including the commit format, and [CLAUDE.md](CLAUDE.md) for Bun conventions.
 
+## Services
+
+- **Scheduler** (`src/space/scheduler/`) - scheduled tasks for apps: `at` / `every` / `cron` schedules, `http` / `command` / `agent` targets, declared in each app's `space.yaml` and managed through `/api/tasks`. See [docs/scheduler.md](docs/scheduler.md).
+
 ## Status
 
-Early stage. The repository currently holds the project scaffold; the layers above describe the target design and will be filled in module by module.
+Early stage. The scheduler is the first Space service; the other layers above describe the target design and will be filled in module by module.
