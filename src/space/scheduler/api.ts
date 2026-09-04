@@ -145,6 +145,7 @@ export function view(task: Task) {
     schedule: effectiveSchedule(task),
     target: task.target,
     timeoutMs: task.timeoutMs,
+    notify: task.notify,
     overrides: task.overrides,
     base: { enabled: task.enabled, schedule: task.schedule },
     state: {

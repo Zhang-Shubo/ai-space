@@ -4,10 +4,12 @@ import type { Store } from "./store.ts";
 import { type RunResult, runTarget } from "./targets.ts";
 import {
   DEFAULT_TIMEOUT_MS,
+  type Run,
   type Schedule,
   type Task,
   type TaskCreate,
   type TaskPatch,
+  type TaskState,
   effectiveEnabled,
   effectiveSchedule,
 } from "./types.ts";
@@ -43,6 +45,8 @@ export type SchedulerOptions = {
   log?: (message: string) => void;
   /** Extra environment for an app's command/agent runs, e.g. the variables storage provisioned. */
   envFor?: (app: string) => Promise<Record<string, string>>;
+  /** Called after every run is recorded, with the task's updated state and the state before the run. */
+  onFinish?: (event: { task: Task; run: Run; before: TaskState }) => void;
 };
 
 export type SyncSummary = { app: string; created: string[]; updated: string[]; orphaned: string[] };
@@ -54,6 +58,7 @@ export class Scheduler {
   private readonly maxConcurrency: number;
   private readonly log: (message: string) => void;
   private readonly envFor?: (app: string) => Promise<Record<string, string>>;
+  private readonly onFinish?: SchedulerOptions["onFinish"];
   private readonly appDirs = new Map<string, string>();
   private readonly inflight = new Map<string, Promise<void>>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -67,6 +72,7 @@ export class Scheduler {
     this.maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
     this.log = opts.log ?? ((m) => console.log(`[scheduler] ${m}`));
     this.envFor = opts.envFor;
+    this.onFinish = opts.onFinish;
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -203,6 +209,7 @@ export class Scheduler {
     const endedAt = this.now();
     const task = this.store.getTask(taskId);
     if (!task) return; // deleted while running
+    const before = { ...task.state };
     const s = task.state;
     s.runningAt = undefined;
     s.lastRunAt = startedAt;
@@ -221,9 +228,16 @@ export class Scheduler {
     }
 
     this.store.saveState(task.id, s, endedAt);
-    this.store.addRun({ taskId: task.id, startedAt, endedAt, status: result.status, error: result.error, output: result.output });
+    const run = this.store.addRun({ taskId: task.id, startedAt, endedAt, status: result.status, error: result.error, output: result.output });
     const summary = result.status === "ok" ? "ok" : `${result.status}: ${result.error ?? ""}`;
     this.log(`task ${task.app}/${task.name}: ${summary} in ${s.lastDurationMs}ms`);
+    if (this.onFinish) {
+      try {
+        this.onFinish({ task, run, before });
+      } catch (e) {
+        this.log(`onFinish hook failed: ${(e as Error).message ?? String(e)}`);
+      }
+    }
   }
 
   /** Force a run now. Returns false when the task is already running. */
@@ -253,6 +267,7 @@ export class Scheduler {
       overrides: {},
       source: input.source ?? "api",
       orphaned: false,
+      ...(input.notify ? { notify: input.notify } : {}),
       state: { consecutiveErrors: 0 },
       createdAt: now,
       updatedAt: now,
@@ -316,7 +331,7 @@ export class Scheduler {
       seen.add(mt.name);
       const existing = this.store.findTask(manifest.app, mt.name);
       if (!existing) {
-        this.addTask({ app: manifest.app, name: mt.name, description: mt.description, schedule: mt.schedule, target: mt.target, timeoutMs: mt.timeoutMs, enabled: mt.enabled, source: "manifest" });
+        this.addTask({ app: manifest.app, name: mt.name, description: mt.description, schedule: mt.schedule, target: mt.target, timeoutMs: mt.timeoutMs, enabled: mt.enabled, source: "manifest", notify: mt.notify });
         summary.created.push(mt.name);
         continue;
       }
@@ -328,11 +343,13 @@ export class Scheduler {
         existing.description !== mt.description ||
         existing.enabled !== mt.enabled ||
         existing.timeoutMs !== mt.timeoutMs ||
-        JSON.stringify(existing.target) !== JSON.stringify(mt.target);
+        JSON.stringify(existing.target) !== JSON.stringify(mt.target) ||
+        JSON.stringify(existing.notify ?? null) !== JSON.stringify(mt.notify ?? null);
       if (!changed) continue;
       existing.description = mt.description;
       existing.target = mt.target;
       existing.timeoutMs = mt.timeoutMs;
+      existing.notify = mt.notify;
       existing.enabled = mt.enabled;
       existing.source = "manifest";
       existing.orphaned = false;

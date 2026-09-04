@@ -1,15 +1,16 @@
 import { basename, join } from "node:path";
 import { assertSchedule, parseDuration } from "./schedule.ts";
-import { DEFAULT_TIMEOUT_MS, type Schedule, type Target } from "./types.ts";
+import { DEFAULT_TIMEOUT_MS, TASK_NOTIFY_EVENTS, type Schedule, type Target, type TaskNotify, type TaskNotifyEvent } from "./types.ts";
 
 /**
  * App manifest (`space.yaml`) parsing.
  *
- * Only the `tasks` section is interpreted here; `storage` is passed through raw
- * for the storage service. Each task declares one
+ * Only the `tasks` section is interpreted here; `storage` and `notify` are
+ * passed through raw for their services. Each task declares one
  * schedule form (`at` / `every` / `schedule` for cron) and one `run` target
- * (`http` / `command` / `agent`). Parsing is strict: a bad manifest rejects
- * the whole app so nothing partially applies.
+ * (`http` / `command` / `agent`), plus an optional `notify` block naming the
+ * outcomes to report. Parsing is strict: a bad manifest rejects the whole app
+ * so nothing partially applies.
  */
 
 export const MANIFEST_FILE = "space.yaml";
@@ -21,14 +22,19 @@ export type ManifestTask = {
   target: Target;
   timeoutMs: number;
   enabled: boolean;
+  notify?: TaskNotify;
 };
 
 export type Manifest = {
   app: string;
   dir: string;
+  /** Display name (`title:`), used as the tag in notifications. */
+  title?: string;
   tasks: ManifestTask[];
   /** Raw `storage:` section, interpreted by the storage service. */
   storage?: unknown;
+  /** Raw `notify:` section, interpreted by the notify service. */
+  notify?: unknown;
 };
 
 export async function loadManifest(dir: string): Promise<Manifest> {
@@ -58,7 +64,15 @@ export function parseManifest(yaml: string, dir: string): Manifest {
     seen.add(t.name);
     tasks.push(t);
   });
-  return { app, dir, tasks, ...(doc.storage !== undefined ? { storage: doc.storage } : {}) };
+  if (doc.title !== undefined && (typeof doc.title !== "string" || !doc.title.trim())) throw new Error("title must be a non-empty string");
+  return {
+    app,
+    dir,
+    ...(typeof doc.title === "string" ? { title: doc.title.trim() } : {}),
+    tasks,
+    ...(doc.storage !== undefined ? { storage: doc.storage } : {}),
+    ...(doc.notify !== undefined ? { notify: doc.notify } : {}),
+  };
 }
 
 function parseTask(raw: unknown, index: number): ManifestTask {
@@ -74,7 +88,28 @@ function parseTask(raw: unknown, index: number): ManifestTask {
   const timeoutMs = raw.timeout === undefined ? DEFAULT_TIMEOUT_MS : parseDuration(raw.timeout as string | number);
   const enabled = raw.enabled === undefined ? true : raw.enabled === true;
   const description = typeof raw.description === "string" ? raw.description : undefined;
-  return { name, description, schedule, target, timeoutMs, enabled };
+  const notify = raw.notify === undefined ? undefined : parseTaskNotify(raw.notify, ctx);
+  return { name, description, schedule, target, timeoutMs, enabled, ...(notify ? { notify } : {}) };
+}
+
+/**
+ * `notify: { when: [error, ok], channel: ops }`; `when` defaults to `[error]`.
+ * The key is `when` rather than `on` because YAML 1.1 reads a bare `on` as the
+ * boolean true.
+ */
+export function parseTaskNotify(raw: unknown, ctx: string): TaskNotify {
+  if (raw === true) return { when: ["error"] };
+  if (!isRecord(raw)) throw new Error(`${ctx}: notify must be a mapping with when / channel`);
+  for (const key of Object.keys(raw)) if (key !== "when" && key !== "channel") throw new Error(`${ctx}: notify has unknown key "${key}"`);
+  const when = raw.when === undefined ? ["error"] : Array.isArray(raw.when) ? raw.when : [raw.when];
+  if (when.length === 0) throw new Error(`${ctx}: notify.when must name at least one of ${TASK_NOTIFY_EVENTS.join(", ")}`);
+  for (const e of when) {
+    if (!(TASK_NOTIFY_EVENTS as readonly unknown[]).includes(e)) throw new Error(`${ctx}: notify.when must be a list of ${TASK_NOTIFY_EVENTS.join(", ")}`);
+  }
+  const events = [...new Set(when as TaskNotifyEvent[])];
+  if (raw.channel === undefined) return { when: events };
+  if (typeof raw.channel !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(raw.channel)) throw new Error(`${ctx}: notify.channel must be a channel name`);
+  return { when: events, channel: raw.channel };
 }
 
 function parseSchedule(raw: Record<string, unknown>, ctx: string): Schedule {

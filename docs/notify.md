@@ -2,7 +2,7 @@
 
 The notify service is the Space-layer answer to "tell a human something happened". Apps, scheduled tasks and agents hand ai-space a message; ai-space renders it for each configured chat app, delivers it with retries and rate limits, and keeps a record. Credentials for chat apps live in the workspace once, never in an app.
 
-Status: design only. This document covers **outbound, one-way notifications**. Inbound messages (commands, replies, chat with an agent from a phone) are a later stage; the section [Two-way later](#two-way-later) lists what this design keeps open for it.
+Status: implemented in `src/space/notify/` (channels, rendering, transports for every kind listed below, outbox engine, API, CLI, task hooks, the `space:notify` skill). This document covers **outbound, one-way notifications**. Inbound messages (commands, replies, chat with an agent from a phone) are a later stage; the section [Two-way later](#two-way-later) lists what this design keeps open for it.
 
 ## Why a Space service
 
@@ -43,7 +43,7 @@ A channel is a kind plus credentials plus a recipient, named by the operator and
 | `kind` | `telegram`, `discord`, `slack`, `feishu`, `dingtalk`, `wecom`, `bark`, `ntfy`, `webhook`, `stdout`. |
 | `url` | Kind-specific URL holding credentials and recipient (see [Channel URLs](#channel-urls)). |
 | `enabled` | Kill switch. Disabled channels accept notifications and record them as `skipped`. |
-| `limits` | Derived from the kind: max text length, minimum gap between sends, burst allowance. Overridable per channel. |
+| `limits` | Derived from the kind: where to split long text, and the minimum gap between two sends. |
 
 Channels are the operator's, not the app's. An app that wants a second destination for a second class of message (orders on one bot, alerts on another) does not get a second token; the operator defines a second channel and the app names it.
 
@@ -64,7 +64,7 @@ What an app hands over. Everything is plain JSON.
 | `window` | duration? | Dedup window for `key`. Default `10m`. |
 | `wait` | boolean? | `true` makes the API call return only after delivery is attempted. Default `false` (202 immediately). |
 
-A notification with no configured channel at all is recorded as `skipped` with reason `no channels` and the call still succeeds. Unconfigured is not an error; a fresh machine must not fail its apps.
+A notification to a channel that is not configured is recorded as `skipped` with reason `channel not configured` and the call still succeeds. Unconfigured is not an error; a fresh machine must not fail its apps.
 
 Levels map to the leading emoji the existing apps already use by convention, so a chat that mixes old and new senders stays consistent:
 
@@ -201,7 +201,7 @@ The engine is an outbox with per-channel workers.
 Rules the engine enforces:
 
 - **Never block the app.** The default call returns before any network activity. `wait: true` exists for the last message before a process exits.
-- **Storms are throttled twice.** `key` dedups identical alerts inside the window. On top of that, each app is limited to 30 notifications per channel per 10 minutes; past the limit the engine sends one `⚠️ [app] 27 more notifications suppressed for 10 minutes` and records the rest as `skipped`. A chat that receives 300 messages is a chat nobody reads.
+- **Storms are throttled twice.** `key` dedups identical alerts inside the window. On top of that, each app is limited to 30 notifications per channel per 10 minutes; past the limit the engine records the rest as `skipped` and sends one `⚠️ [app] Notifications suppressed` notice per window saying until when. A chat that receives 300 messages is a chat nobody reads.
 - **Restart.** Queued deliveries survive in SQLite and are drained on start, oldest first. Deliveries older than one hour that were never sent are marked `skipped` with reason `stale` instead of arriving late and confusing whoever reads them.
 - **Disabled means skipped, not lost.** A channel with `_ENABLED=false` records `skipped`; flipping it on does not replay history.
 
@@ -228,18 +228,20 @@ A panel widget for "last 20 notifications" falls out of the history route; it is
 The scheduler is the first sender and needs no app cooperation. Two hooks:
 
 - **Workspace level.** `SPACE_NOTIFY_TASKS=default` makes the scheduler send `🚨 [app] task <name> failed 3 times: <error>` after three consecutive errors, and `✅ [app] task <name> recovered` on the next success. Three matches the backoff table; one failure is noise. Empty disables it.
-- **Task level.** A task may override:
+- **Task level.** A task may ask for its own reports:
 
 ```yaml
 tasks:
   - name: daily-digest
     schedule: "30 14 * * *"
-    notify: { on: [error, ok], channel: reports }   # on: error (default) | ok | recover | skipped
+    notify: { when: [error, ok], channel: reports }   # when: error (default) | ok | recover | skipped
     run:
       agent: { prompt: prompts/daily-digest.md }
 ```
 
-`on: ok` for a task that runs once a day gives the daily "the digest went out" message without the task's own code sending anything. Task notifications use `key: task:<id>:<status>` with the task's own interval as the window, so a failing five-minute task produces one alert, not sixty.
+`notify: true` is shorthand for `when: [error]`. The key is `when`, not `on`, because YAML 1.1 reads a bare `on` as the boolean true. `when: ok` for a task that runs once a day gives the daily "the digest went out" message without the task's own code sending anything.
+
+Rules per event: `error` fires on the first failure of a streak and then at most once per hour while the streak continues (key `task:<id>:error`), so a failing five-minute task produces one alert, not sixty; `recover` fires on the first success after failures; `ok` and `skipped` fire on every run with that status. Task-level messages are sent as the app, so the app's `notify.channels` allow-list applies; a channel the app has not declared is logged and dropped. Workspace-level reports are ai-space's own and bypass it.
 
 ## Two-way later
 
@@ -266,21 +268,28 @@ What two-way will need that this design does not provide: per-sender identity an
 | App names a channel it is not allowed | 400 with the channel name; nothing sent. |
 | Malformed channel URL in `.env` | That channel is `error` at boot with a log line; others work. |
 
-## Implementation plan
+## Implementation
 
-Each step is one change with tests, in `src/space/notify/`.
+One file per concern in `src/space/notify/`, tests next to each:
 
-1. `types.ts`, `channels.ts`: model, URL parsing for every kind, `.env` loading. Tests on parsing and on the `[app]` and emoji rules.
-2. `render.ts`: per-kind rendering and splitting, with fixtures. Telegram and Discord first, since they are what is in use today; the webhook family (Slack, Feishu, DingTalk, WeCom, Bark, ntfy, generic) is one HTTPS POST each and follows.
-3. `store.ts`, `engine.ts`: outbox, workers, retries, dedup, per-app cap, stale handling. Tests with a stub transport, including the 429 path.
-4. `api.ts`, CLI subcommand, `SPACE_APP_TOKEN` in `space.env`, manifest `notify` section in `manifest.ts`.
-5. Scheduler hooks (`SPACE_NOTIFY_TASKS`, `tasks[].notify`).
-6. `space:notify` shared skill, `.env.example` and `app-spec.md` updates, a section in the README.
+| File | Holds |
+| --- | --- |
+| `types.ts` | The model: channel kinds, levels and their emoji, notification, delivery, `NotifySpec`. |
+| `channels.ts` | `SPACE_NOTIFY_*` loading, the URL grammar per kind, per-kind limits (split size, minimum gap). |
+| `render.ts` | Headline / body / url composition, per-channel escaping styles, line-based splitting with numbered parts. |
+| `transports.ts` | One function per kind: request shape, signing (Feishu, DingTalk), photo upload, response and rate-limit interpretation. All go through an injected `fetch`. |
+| `spec.ts` | The `notify:` manifest section and the request body validation. |
+| `store.ts` | `notifications` and `deliveries` tables in `space.db` (bun:sqlite), 2000 per app. |
+| `engine.ts` | `NotifyService`: accept, dedup, cap, one worker per channel, retries, stale handling, image parking. |
+| `api.ts` | The routes; app identity from `SPACE_APP_TOKEN` (resolved by the storage service) or the operator token plus `app`. |
+| `tasks.ts` | The scheduler hook that turns run results into messages. |
+
+The scheduler exposes an `onFinish` callback and stores `tasks[].notify`; the storage service issues the per-app token (`app_tokens` table) and writes it into `space.env`; the entry point wires the three together and adds the `notify` subcommand. The shared skill lives in `skills/notify/SKILL.md`.
 
 Migrating an app: delete its notify module, replace each call with the `POST /api/notify` request (or the CLI in a script), move its token and chat id lines from the app `.env` to `SPACE_NOTIFY_*` in the workspace `.env`, and drop its `escapeHtml` calls. Apps that kept a per-class kill switch (`NOTIFY_TRADES=0`) keep it in their own code; the channel-level switch is the operator's, not the app's.
 
 ## Open questions
 
-- **Per-app token.** `SPACE_APP_TOKEN` in `space.env` is proposed here because it identifies the caller without trusting the body. It is a small addition to the app spec that other services (widgets, chat) will want too. The alternative, the shared `SPACE_API_TOKEN` plus a self-declared `app`, is simpler and fine on a single-user machine.
+- **Per-app token.** `SPACE_APP_TOKEN` in `space.env` identifies the caller without trusting the body, and other services (widgets, chat) will want it too. The shared `SPACE_API_TOKEN` plus a self-declared `app` is also accepted, for the CLI and for operators.
 - **Markdown subset.** Plain text only in this version. If apps need bold and code spans in the body, the next step is a small markdown subset (`**bold**`, `` `code` ``, links) that the renderer converts per channel, still with no app-side escaping.
 - **Channel config in YAML.** `.env` URLs are enough for a handful of channels. A workspace `notify.yaml` becomes worth it when channels need per-channel overrides (custom limits, a display name) that do not fit a URL query string.

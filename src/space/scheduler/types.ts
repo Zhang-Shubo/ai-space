@@ -50,6 +50,16 @@ export type TaskState = {
 
 export type TaskSource = "manifest" | "api";
 
+export const TASK_NOTIFY_EVENTS = ["error", "ok", "recover", "skipped"] as const;
+export type TaskNotifyEvent = (typeof TASK_NOTIFY_EVENTS)[number];
+
+/** `tasks[].notify`: which run outcomes the notify service reports (`when`), and where. */
+export type TaskNotify = {
+  when: TaskNotifyEvent[];
+  /** Channel name; default: the app's default channel. */
+  channel?: string;
+};
+
 export type Task = {
   id: string;
   /** Owning app; manifest tasks are keyed by app + name. */
@@ -66,6 +76,7 @@ export type Task = {
   source: TaskSource;
   /** Manifest task that disappeared from its manifest; kept for history, never runs. */
   orphaned: boolean;
+  notify?: TaskNotify;
   state: TaskState;
   createdAt: number;
   updatedAt: number;
@@ -91,6 +102,7 @@ export type TaskCreate = {
   timeoutMs?: number;
   enabled?: boolean;
   source?: TaskSource;
+  notify?: TaskNotify;
 };
 
 export type TaskPatch = {

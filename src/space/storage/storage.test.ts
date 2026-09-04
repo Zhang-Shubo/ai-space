@@ -48,6 +48,7 @@ describe("StorageService.syncApp", () => {
     expect(env).toEqual({
       SPACE_APP: "my-app",
       SPACE_APP_DATA_DIR: dir,
+      SPACE_APP_TOKEN: expect.stringMatching(/^sat_/),
       DATABASE_URL: `sqlite://${join(dir, "main.db")}`,
       DATABASE_URL_CACHE: `sqlite://${join(dir, "cache.db")}`,
     });
@@ -115,7 +116,7 @@ describe("StorageService.syncApp", () => {
   test("an app without storage still gets a data dir and a minimal space.env", async () => {
     const r = await storage.syncApp("plain", { databases: [] });
     expect(r.created).toEqual([join(ws.data, "plain")]);
-    expect(await envLines("plain")).toEqual({ SPACE_APP: "plain", SPACE_APP_DATA_DIR: join(ws.data, "plain") });
+    expect(await envLines("plain")).toEqual({ SPACE_APP: "plain", SPACE_APP_DATA_DIR: join(ws.data, "plain"), SPACE_APP_TOKEN: expect.stringMatching(/^sat_/) });
   });
 });
 
@@ -132,7 +133,7 @@ describe("StorageService.syncApp blobs", () => {
     expect(r.created).toEqual([join(ws.data, "my-app"), dir]);
     expect(r.blobs).toMatchObject({ app: "my-app", backend: "file", url: `file://${dir}`, orphaned: false });
     expect((await stat(dir)).isDirectory()).toBe(true);
-    expect(await envLines("my-app")).toEqual({ SPACE_APP: "my-app", SPACE_APP_DATA_DIR: join(ws.data, "my-app"), BLOB_URL: `file://${dir}` });
+    expect(await envLines("my-app")).toEqual({ SPACE_APP: "my-app", SPACE_APP_DATA_DIR: join(ws.data, "my-app"), SPACE_APP_TOKEN: expect.stringMatching(/^sat_/), BLOB_URL: `file://${dir}` });
     // Idempotent.
     expect((await storage.syncApp("my-app", { databases: [], blobs: { backend: "file" } })).created).toEqual([]);
   });
@@ -148,6 +149,7 @@ describe("StorageService.syncApp blobs", () => {
     expect(await envLines("my-app")).toEqual({
       SPACE_APP: "my-app",
       SPACE_APP_DATA_DIR: join(ws.data, "my-app"),
+      SPACE_APP_TOKEN: expect.stringMatching(/^sat_/),
       BLOB_URL: "s3://default-bucket/my-app/",
       S3_ENDPOINT: "https://s3.example",
       S3_REGION: "auto",
@@ -195,7 +197,7 @@ describe("StorageService.syncApp blobs", () => {
     expect(r.orphaned).toEqual(["blobs"]);
     expect(r.blobs?.orphaned).toBe(true);
     expect(await readdir(join(ws.data, "my-app"))).toContain("blobs");
-    expect(Object.keys(await envLines("my-app"))).toEqual(["SPACE_APP", "SPACE_APP_DATA_DIR", "DATABASE_URL"]);
+    expect(Object.keys(await envLines("my-app"))).toEqual(["SPACE_APP", "SPACE_APP_DATA_DIR", "SPACE_APP_TOKEN", "DATABASE_URL"]);
 
     const back = await storage.syncApp("my-app", { databases: [{ name: "main", backend: "sqlite" }], blobs: { backend: "file" } });
     expect(back.created).toEqual([]);
@@ -252,9 +254,26 @@ describe("describe / envFor", () => {
     expect(await storage.envFor("my-app")).toEqual({
       SPACE_APP: "my-app",
       SPACE_APP_DATA_DIR: join(ws.data, "my-app"),
+      SPACE_APP_TOKEN: expect.stringMatching(/^sat_/),
       DATABASE_URL: `sqlite://${join(ws.data, "my-app", "main.db")}`,
     });
-    expect(await storage.envFor("unknown")).toEqual({ SPACE_APP: "unknown", SPACE_APP_DATA_DIR: join(ws.data, "unknown") });
+    expect(await storage.envFor("unknown")).toEqual({ SPACE_APP: "unknown", SPACE_APP_DATA_DIR: join(ws.data, "unknown"), SPACE_APP_TOKEN: expect.stringMatching(/^sat_/) });
+  });
+});
+
+describe("app tokens", () => {
+  test("are created once per app, stable across syncs and resolve back to the app", async () => {
+    const token = await storage.tokenFor("my-app");
+    expect(token).toMatch(/^sat_[A-Za-z0-9_-]{20,}$/);
+    await storage.syncApp("my-app", { databases: [] });
+    expect((await envLines("my-app")).SPACE_APP_TOKEN).toBe(token);
+    expect(await storage.tokenFor("my-app")).toBe(token);
+    expect(await storage.tokenFor("other")).not.toBe(token);
+    expect(await storage.appForToken(token)).toBe("my-app");
+    expect(await storage.appForToken("sat_nope")).toBeUndefined();
+    expect(await storage.appForToken("")).toBeUndefined();
+    // Never in the public description.
+    expect(JSON.stringify(await storage.describe("my-app"))).not.toContain(token);
   });
 });
 

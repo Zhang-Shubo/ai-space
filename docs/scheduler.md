@@ -109,6 +109,7 @@ tasks:
 Rules:
 
 - Exactly one of `at` / `every` / `schedule` and exactly one of `run.http` / `run.command` / `run.agent` per task. Durations accept `30s`, `10m`, `6h`, `1d`.
+- An optional `notify: { when: [error, ok, recover, skipped], channel }` (or `notify: true` for `when: [error]`) makes the notify service report the task's outcomes; see [notify.md](notify.md). Independently, `SPACE_NOTIFY_TASKS=<channel>` reports every task that fails three times in a row.
 - Sync is idempotent. A new task is created, a changed one updated, a missing one marked orphaned. A schedule change resets `nextRunAt`.
 - Operator overrides set through the API are kept across re-sync. Clear one by patching it to `null`.
 - A manifest that fails to parse rejects the whole app. Nothing partially applies.

@@ -40,7 +40,9 @@ CREATE INDEX IF NOT EXISTS runs_task_started ON runs(task_id, started_at DESC);
 `;
 
 /** Columns added after the initial schema; applied on open if missing. */
-const ADDED_COLUMNS: { table: string; column: string; ddl: string }[] = [];
+const ADDED_COLUMNS: { table: string; column: string; ddl: string }[] = [
+  { table: "tasks", column: "notify", ddl: "TEXT" },
+];
 
 type TaskRow = {
   id: string;
@@ -54,6 +56,7 @@ type TaskRow = {
   overrides: string;
   source: string;
   orphaned: number;
+  notify: string | null;
   state: string;
   created_at: number;
   updated_at: number;
@@ -118,15 +121,16 @@ export class Store {
   saveTask(task: Task): void {
     this.db
       .query(
-        `INSERT INTO tasks (id, app, name, description, schedule, target, timeout_ms, enabled, overrides, source, orphaned, state, created_at, updated_at)
-         VALUES ($id, $app, $name, $description, $schedule, $target, $timeout_ms, $enabled, $overrides, $source, $orphaned, $state, $created_at, $updated_at)
+        `INSERT INTO tasks (id, app, name, description, schedule, target, timeout_ms, enabled, overrides, source, orphaned, notify, state, created_at, updated_at)
+         VALUES ($id, $app, $name, $description, $schedule, $target, $timeout_ms, $enabled, $overrides, $source, $orphaned, $notify, $state, $created_at, $updated_at)
          ON CONFLICT(id) DO UPDATE SET
            app = excluded.app, name = excluded.name, description = excluded.description,
            schedule = excluded.schedule, target = excluded.target, timeout_ms = excluded.timeout_ms,
            enabled = excluded.enabled, overrides = excluded.overrides, source = excluded.source,
-           orphaned = excluded.orphaned, state = excluded.state, updated_at = excluded.updated_at`,
+           orphaned = excluded.orphaned, notify = excluded.notify, state = excluded.state, updated_at = excluded.updated_at`,
       )
       .run({
+        $notify: task.notify ? JSON.stringify(task.notify) : null,
         $id: task.id,
         $app: task.app,
         $name: task.name,
@@ -204,6 +208,7 @@ function rowToTask(r: TaskRow): Task {
     overrides: JSON.parse(r.overrides),
     source: r.source as Task["source"],
     orphaned: r.orphaned === 1,
+    ...(r.notify ? { notify: JSON.parse(r.notify) } : {}),
     state: { consecutiveErrors: 0, ...state },
     createdAt: r.created_at,
     updatedAt: r.updated_at,

@@ -4,7 +4,7 @@ This document is the contract between ai-space and the apps that run inside it. 
 
 Spec version: `1`. An app states the version it targets with `spec: 1` at the top of `space.yaml`. Breaking changes bump the number; ai-space keeps accepting older versions for at least one release.
 
-Status: the `tasks` and `storage` sections, the workspace layout and the `space.env` hand-over are implemented. `agents`, `widgets`, `skills`, `notify`, the JSON Schema, `validate` and `new-app` are specified here first and implemented next; the [status table](#implementation-status) at the end tracks it.
+Status: the `tasks`, `storage` and `notify` sections, the workspace layout and the `space.env` hand-over are implemented. `agents`, `widgets`, `skills`, the JSON Schema, `validate` and `new-app` are specified here first and implemented next; the [status table](#implementation-status) at the end tracks it.
 
 ## What an app is
 
@@ -243,7 +243,7 @@ Authorization: Bearer ${SPACE_APP_TOKEN}
 { "level": "alert", "title": "Feed stalled", "text": "No items for 3 hours.", "url": "https://…", "key": "feed-stalled" }
 ```
 
-`level` is `info` (default), `success`, `warn`, `alert` or `report`; `text` is plain text; `image` is optional. The call returns as soon as the message is queued. Naming a channel outside `channels` is a 400; sending when no channel is configured succeeds and is recorded as skipped, so an app never fails because notifications are not set up. Shell tasks use `bun src/index.ts notify`, agents use the shared skill `space:notify`. Tasks can ask the scheduler to notify on failure or success with `notify: { on: [error, ok], channel: ops }` and no app code at all.
+`level` is `info` (default), `success`, `warn`, `alert` or `report`; `text` is plain text; `image` is optional. The call returns as soon as the message is queued. Naming a channel outside `channels` is a 400; sending when no channel is configured succeeds and is recorded as skipped, so an app never fails because notifications are not set up. Shell tasks use `bun src/index.ts notify`, agents use the shared skill `space:notify`. Tasks can ask the scheduler to notify on failure or success with `notify: { when: [error, ok], channel: ops }` and no app code at all.
 
 ## Repository
 
@@ -381,7 +381,7 @@ notify:
 | Workspace layout, app discovery, `space.env` | Implemented (`src/space/workspace.ts`, `src/space/storage/`) |
 | `tasks` | Implemented (`src/space/scheduler/`) |
 | `storage` databases and blob hand-over | Implemented; managed blob API and backups pending |
-| `notify`, `/api/notify`, `SPACE_APP_TOKEN` | Designed ([notify.md](notify.md)) |
+| `notify`, `/api/notify`, `SPACE_APP_TOKEN` | Implemented (`src/space/notify/`, `skills/notify/`) |
 | Top-level `spec`, `title`, `description`, `icon`, `status`, `repo` | Planned |
 | `service` | Planned |
 | `agents`, chat route | Planned |
