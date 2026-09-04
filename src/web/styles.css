@@ -27,7 +27,7 @@
   --hairline: rgba(255, 255, 255, 0.12);
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   --solid: #2c3145;
-  --blob-a: #4f46e5; --blob-b: #9d174d; --blob-c: #0e7490;
+  --blob-a: #2a2872; --blob-b: #5f1642; --blob-c: #134354;
 }
 * { box-sizing: border-box; margin: 0; }
 html, body { overflow-x: hidden; }   
