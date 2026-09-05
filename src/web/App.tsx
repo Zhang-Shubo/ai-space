@@ -3,6 +3,7 @@ import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
 import { getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
+import { type Key, LANGS, type Lang, localized, saveLang, useLang } from "./i18n.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat window.
@@ -11,9 +12,10 @@ import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } f
 // Edit mode (long-press the background): add an app from a link, hide or delete, drag to reorder.
 // Everything comes from the apps' manifests through the panel API; the browser holds no secrets.
 // Entries from peer machines say where they run in their hover details and are muted while that peer is down.
+// Every string the panel owns goes through `t` (i18n.ts); manifest text is picked with `localized`.
 
-const STATUS: Record<string, string> = { active: "active", paused: "paused", archived: "archived" };
-const HEALTH: Record<string, string> = { ok: "up", down: "down", unknown: "" };
+const STATUS: Record<string, Key> = { active: "status.active", paused: "status.paused", archived: "status.archived" };
+const HEALTH: Record<string, Key | undefined> = { ok: "status.up", down: "status.down", unknown: undefined };
 
 type DragProps = Partial<Record<"draggable" | "onDragStart" | "onDragOver" | "onDragEnd" | "data-drop", unknown>> | undefined;
 
@@ -111,6 +113,8 @@ const MAX_COLS = 2;
 const MAX_ROWS = 2;
 
 function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: DragProps; theme: string; onResize?: (size: string, commit: boolean) => void }) {
+  const { lang, t } = useLang();
+  const title = localized(lang, w).title;
   const embed = `${w.peer ? `/api/peers/${encodeURIComponent(w.peer)}` : "/api"}/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}`;
   const tall = w.size.endsWith("x2");
   const card = useRef<HTMLDivElement>(null);
@@ -154,34 +158,34 @@ function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: 
     window.addEventListener("pointercancel", up);
   };
   return (
-    <div ref={card} className={`widget s${w.size}${w.stale ? " stale" : ""}${resizing ? " resizing" : ""}`} {...(dragProps as object)} title={w.stale ? `${w.peer} is not answering; last known state` : undefined}>
+    <div ref={card} className={`widget s${w.size}${w.stale ? " stale" : ""}${resizing ? " resizing" : ""}`} {...(dragProps as object)} title={w.stale ? t("widget.stale", { peer: w.peer ?? "" }) : undefined}>
       <div className="widget-head">
         <span className="widget-ico">
           <Icon icon={w.icon} fallback="📦" />
         </span>
-        <b>{w.title}</b>
+        <b>{title}</b>
         {w.peer && <span className="widget-peer">{w.peer}</span>}
         {onResize && <span className="widget-size">{(resizing ?? w.size).replace("x", "×")}</span>}
       </div>
-      {onResize && <span className="widget-grip" title="Drag to resize (columns × rows)" draggable={false} onPointerDown={startResize} onDragStart={(e) => e.preventDefault()} />}
+      {onResize && <span className="widget-grip" title={t("widget.resizeHint")} draggable={false} onPointerDown={startResize} onDragStart={(e) => e.preventDefault()} />}
       {w.kind === "embed" ? (
-        <iframe title={w.title} src={embed} sandbox="allow-scripts" loading="lazy" />
+        <iframe title={title} src={embed} sandbox="allow-scripts" loading="lazy" />
       ) : w.ok ? (
         <div className="widget-list">
           {w.items.slice(0, tall ? 14 : 6).map((it, i) => (
             <a key={i} href={it.url || w.link} target="_blank" rel="noopener noreferrer">
               <span className="wi-text">{it.text}</span>
-              {it.time && <span className="wi-time">{relTime(it.time)}</span>}
+              {it.time && <span className="wi-time">{relTime(it.time, lang)}</span>}
             </a>
           ))}
-          {!w.items.length && <p className="widget-err">Nothing yet</p>}
+          {!w.items.length && <p className="widget-err">{t("widget.empty")}</p>}
         </div>
       ) : (
-        <p className="widget-err">Unavailable: {w.error}</p>
+        <p className="widget-err">{t("common.unavailable", { error: w.error })}</p>
       )}
       {w.link && (
         <a className="widget-more" href={w.link} target="_blank" rel="noopener noreferrer">
-          View all →
+          {t("widget.viewAll")}
         </a>
       )}
     </div>
@@ -189,11 +193,12 @@ function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: 
 }
 
 function AddForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const { t } = useLang();
   const [link, setLink] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const save = async () => {
-    if (!/^https?:\/\//.test(link.trim())) return setErr("Enter a link (a repository or a service address)");
+    if (!/^https?:\/\//.test(link.trim())) return setErr(t("add.needLink"));
     setErr("");
     setBusy(true);
     try {
@@ -209,20 +214,20 @@ function AddForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
     <div className="overlay" onClick={busy ? undefined : onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>
-          Add app<span className="modal-sub">from a link, resolved by the agent</span>
+          {t("add.title")}<span className="modal-sub">{t("add.sub")}</span>
         </h3>
         <div className="field">
-          <label>Link *</label>
-          <input value={link} onChange={(e) => setLink(e.target.value)} disabled={busy} placeholder="https://github.com/you/my-app or https://tool.example.com" onKeyDown={(e) => e.key === "Enter" && !busy && save()} />
+          <label>{t("add.link")}</label>
+          <input value={link} onChange={(e) => setLink(e.target.value)} disabled={busy} placeholder={t("add.placeholder")} onKeyDown={(e) => e.key === "Enter" && !busy && save()} />
         </div>
-        <div className="form-hint">The name, icon and description are read from the link and written to a manifest-only app under apps/.</div>
+        <div className="form-hint">{t("add.hint")}</div>
         {err && <div className="form-err">{err}</div>}
         <div className="actions">
           <button className="btn2" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button className="btn2 primary" onClick={save} disabled={busy}>
-            {busy ? "Resolving…" : "Save"}
+            {busy ? t("add.resolving") : t("common.save")}
           </button>
         </div>
       </div>
@@ -235,6 +240,7 @@ function AddForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
  * data) and sends the DELETE, to the hub route for a peer's app.
  */
 function UninstallForm({ app, onClose, onDone }: { app: AppInfo; onClose: () => void; onDone: () => void }) {
+  const { lang, t } = useLang();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const path = app.peer ? `/api/peers/${encodeURIComponent(app.peer)}/apps/${encodeURIComponent(app.name)}` : `/api/apps/${encodeURIComponent(app.name)}`;
@@ -253,21 +259,21 @@ function UninstallForm({ app, onClose, onDone }: { app: AppInfo; onClose: () => 
     <div className="overlay" onClick={busy ? undefined : onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>
-          Uninstall {app.title}
-          {app.peer && <span className="modal-sub">on {app.peer}</span>}
+          {t("uninstall.title", { title: localized(lang, app).title })}
+          {app.peer && <span className="modal-sub">{t("common.onPeer", { peer: app.peer })}</span>}
         </h3>
         <ul className="modal-list">
-          {app.service ? <li>Its service is stopped (port {app.service.port}).</li> : <li>It has no service to stop.</li>}
-          {app.manifestOnly ? <li>The link entry is deleted.</li> : <li>Its directory leaves the workspace: a symlink is removed, a checkout is moved to the workspace trash. No code is deleted.</li>}
-          <li>Its tasks, agents and widgets disappear from the panel. The data directory is kept.</li>
+          {app.service ? <li>{t("uninstall.stopService", { port: app.service.port })}</li> : <li>{t("uninstall.noService")}</li>}
+          {app.manifestOnly ? <li>{t("uninstall.deleteLink")}</li> : <li>{t("uninstall.moveDir")}</li>}
+          <li>{t("uninstall.forget")}</li>
         </ul>
         {err && <div className="form-err">{err}</div>}
         <div className="actions">
           <button className="btn2" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button className="btn2 danger" onClick={run} disabled={busy}>
-            {busy ? "Uninstalling…" : "Uninstall"}
+            {busy ? t("uninstall.busy") : t("uninstall.action")}
           </button>
         </div>
       </div>
@@ -282,6 +288,7 @@ type Prefs = { noPop?: boolean; noPet?: boolean; noWidget?: boolean; pet?: PetCh
  * the public manifest and kept in the preferences. Empty means the bundled default.
  */
 function PetField({ pet, onChange }: { pet: PetChoice | undefined; onChange: (p: PetChoice | undefined) => void }) {
+  const { t } = useLang();
   const [query, setQuery] = useState(pet?.slug || "");
   const [pets, setPets] = useState<PetdexPet[] | null>(null);
   const [state, setState] = useState<{ kind: "idle" } | { kind: "busy" } | { kind: "error"; text: string }>({ kind: "idle" });
@@ -302,20 +309,19 @@ function PetField({ pet, onChange }: { pet: PetChoice | undefined; onChange: (p:
     setState({ kind: "busy" });
     resolvePet(q)
       .then((p) => {
-        if (!p) return setState({ kind: "error", text: `No pet called “${q}” on petdex.dev` });
+        if (!p) return setState({ kind: "error", text: t("pet.notFound", { name: q }) });
         setState({ kind: "idle" });
         onChange(p);
       })
-      .catch(() => setState({ kind: "error", text: "petdex.dev is unreachable" }));
+      .catch(() => setState({ kind: "error", text: t("pet.unreachable") }));
   };
-  const note =
-    state.kind === "busy" ? "Looking up…" : state.kind === "error" ? state.text : pet ? `${pet.name}${pet.by ? ` · by ${pet.by}` : ""}` : "Capybara (built in)";
+  const note = state.kind === "busy" ? t("pet.lookingUp") : state.kind === "error" ? state.text : pet ? (pet.by ? t("pet.by", { name: pet.name, by: pet.by }) : pet.name) : t("pet.default");
   return (
     <div className="setfield">
       <div className="setinput">
         <input
           list="petdex-pets"
-          placeholder="Pet name from petdex.dev"
+          placeholder={t("pet.placeholder")}
           value={query}
           spellCheck={false}
           autoComplete="off"
@@ -332,7 +338,7 @@ function PetField({ pet, onChange }: { pet: PetChoice | undefined; onChange: (p:
         {/* Always in the DOM so the row keeps its width; hidden until there is something to clear. */}
         <button
           type="button"
-          title="Back to the default pet"
+          title={t("pet.reset")}
           style={{ visibility: pet || query ? "visible" : "hidden" }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
@@ -356,7 +362,9 @@ function PetField({ pet, onChange }: { pet: PetChoice | undefined; onChange: (p:
   );
 }
 
-export default function App() {
+/** `onLang` changes the language of the whole page; the root (main.tsx) owns the value and provides it. */
+export default function App({ onLang }: { onLang: (lang: Lang) => void }) {
+  const { lang, t } = useLang();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -370,7 +378,7 @@ export default function App() {
   // One floating panel at a time: opening the settings, the chat or the tasks closes the others.
   const [tasksOpen, setTasksOpen] = useState(false);
   // The chat opens on the space agent by default; an agent tile switches to that agent.
-  const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", avatar: "✨", appIcon: "✨", runtime: "claude" });
+  const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", i18n: { zh: { title: "基础" } }, avatar: "✨", appIcon: "✨", runtime: "claude" });
   const [prefs, setPrefs] = useState<Prefs>(() => {
     try {
       return (JSON.parse(localStorage.getItem("panel-prefs") || "{}") as Prefs) || {};
@@ -579,6 +587,11 @@ export default function App() {
       : undefined;
 
   const empty = (text: string) => (loaded ? <div className="empty">{text}</div> : null);
+  const pickLang = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value as Lang;
+    saveLang(next);
+    onLang(next);
+  };
 
   return (
     <>
@@ -589,58 +602,62 @@ export default function App() {
       </div>
       <div className="shell">
         <section>
-          <h2>Apps</h2>
+          <h2>{t("apps.heading")}</h2>
           <div className={`launcher ${editing ? "editing" : ""}`}>
-              {apps.map((p, i) => (
+              {apps.map((p, i) => {
+                const shown = localized(lang, p);
+                const statusKey = p.service ? HEALTH[p.service.health] ?? STATUS[p.status] : STATUS[p.status];
+                return (
                 <Tile
                   key={p.id}
                   icon={p.icon}
                   fallback="📦"
-                  name={p.title}
+                  name={shown.title}
                   href={p.url}
                   editing={editing}
                   onRemove={() => removeApp(p)}
-                  removeTitle={p.manifestOnly ? "Delete" : "Hide"}
+                  removeTitle={p.manifestOnly ? t("common.delete") : t("common.hide")}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("apps", setApps, i)}
                   stale={p.stale}
                 >
                   <p className="pop-title">
-                    {p.title}
+                    {shown.title}
                     <span className={`status ${p.service?.health ?? p.status}`}>
                       <i />
-                      {p.service ? HEALTH[p.service.health] || STATUS[p.status] : STATUS[p.status] || p.status}
+                      {statusKey ? t(statusKey) : p.status}
                     </span>
                   </p>
-                  {p.peer && <p className="pop-hint">{p.stale ? `On ${p.peer}, which is not answering; last known state` : `On ${p.peer}`}</p>}
-                  {p.description && <p className="pop-body">{p.description}</p>}
+                  {p.peer && <p className="pop-hint">{t(p.stale ? "common.onPeerStale" : "common.onPeer", { peer: p.peer })}</p>}
+                  {shown.description && <p className="pop-body">{shown.description}</p>}
                   {p.repo && (
                     <p className="pop-entry">
                       <a href={repoUrl(p.repo)} target="_blank" rel="noopener noreferrer">
-                        repository ↗
+                        {t("apps.repo")}
                       </a>
                     </p>
                   )}
                 </Tile>
-              ))}
-              <Tile icon="/settings.svg" fallback="⚙️" name="Settings" editing={editing} onOpen={openSettings} showPop={!prefs.noPop} className="builtin">
+                );
+              })}
+              <Tile icon="/settings.svg" fallback="⚙️" name={t("settings.title")} editing={editing} onOpen={openSettings} showPop={!prefs.noPop} className="builtin">
                 <p className="pop-title">
-                  Settings
+                  {t("settings.title")}
                   <span className="status">
                     <i />
-                    built in
+                    {t("status.builtIn")}
                   </span>
                 </p>
-                <p className="pop-body">Preferences, scheduled tasks, peers and services of this space.</p>
+                <p className="pop-body">{t("settings.blurb")}</p>
               </Tile>
               {editing && (
                 <button className="tile add" onClick={() => setAdding(true)}>
                   <span className="tile-icon">＋</span>
-                  <span className="tile-name">Add</span>
+                  <span className="tile-name">{t("apps.add")}</span>
                 </button>
               )}
           </div>
-          {!apps.length && empty("No apps yet. Put an app with a space.yaml under apps/, or long-press the background to add one from a link.")}
+          {!apps.length && empty(t("apps.empty"))}
           {editing && (
             <div
               className={`dropzone${zoneHot ? " hot" : ""}`}
@@ -666,21 +683,23 @@ export default function App() {
             >
               <span className="dropzone-icon">🗑</span>
               <span>
-                <b>Uninstall</b> · drop an app here to stop its service and remove it from the space; its data stays
+                <b>{t("uninstall.action")}</b> · {t("uninstall.zoneHint")}
               </span>
             </div>
           )}
         </section>
         <section>
-          <h2>Agents</h2>
+          <h2>{t("agents.heading")}</h2>
           {agents.length ? (
             <div className={`launcher ${editing ? "editing" : ""}`}>
-              {agents.map((a, i) => (
+              {agents.map((a, i) => {
+                const shown = localized(lang, a);
+                return (
                 <Tile
                   key={a.id}
                   icon={a.avatar}
                   fallback="🦾"
-                  name={a.title}
+                  name={shown.title}
                   editing={editing}
                   onOpen={() => openChat(a)}
                   showPop={!prefs.noPop}
@@ -688,25 +707,26 @@ export default function App() {
                   corner={a.app !== "space" && a.appIcon !== a.avatar ? a.appIcon : undefined}
                 >
                   <p className="pop-title">
-                    {a.title}
+                    {shown.title}
                     <span className="status">
                       <i />
-                      {a.app === "space" ? "base" : a.id}
+                      {a.app === "space" ? t("status.base") : a.id}
                     </span>
                   </p>
-                  {a.peer && <p className="pop-hint">On {a.peer}</p>}
-                  {a.description && <p className="pop-body">{a.description}</p>}
-                  <p className="pop-hint">Click to chat</p>
+                  {a.peer && <p className="pop-hint">{t("common.onPeer", { peer: a.peer })}</p>}
+                  {shown.description && <p className="pop-body">{shown.description}</p>}
+                  <p className="pop-hint">{t("agents.clickToChat")}</p>
                 </Tile>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            empty("No agents yet.")
+            empty(t("agents.empty"))
           )}
         </section>
         {widgets.length > 0 && !prefs.noWidget && (
           <section>
-            <h2>Widgets</h2>
+            <h2>{t("widgets.heading")}</h2>
             <div className={`widgets ${editing ? "editing" : ""}`}>
               {widgets.map((w, i) => (
                 <Widget key={w.id} w={w} theme={theme} dragProps={dragProps("widgets", setWidgets, i)} onResize={editing ? (size, commit) => resizeWidget(w, size, commit) : undefined} />
@@ -737,32 +757,42 @@ export default function App() {
       )}
       {setsOpen && (
         <div className="overlay top" onClick={() => setSetsOpen(false)}>
-          <div className="panel settings" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+          <div className="panel settings" role="dialog" aria-label={t("settings.title")} onClick={(e) => e.stopPropagation()}>
             <div className="panel-head">
-              <b>Settings</b>
-              <button className="chat-hbtn" title="Close" onClick={() => setSetsOpen(false)}>
+              <b>{t("settings.title")}</b>
+              <button className="chat-hbtn" title={t("common.close")} onClick={() => setSetsOpen(false)}>
                 ✕
               </button>
             </div>
             <div className="setbody">
               <label className="setrow">
-                Hover details
+                {t("settings.hover")}
                 <input type="checkbox" role="switch" checked={!prefs.noPop} onChange={() => togglePref("noPop")} />
               </label>
               <label className="setrow">
-                Desk pet
+                {t("settings.pet")}
                 <input type="checkbox" role="switch" checked={!prefs.noPet} onChange={() => togglePref("noPet")} />
               </label>
               {!prefs.noPet && <PetField pet={prefs.pet} onChange={setPet} />}
               <label className="setrow">
-                Widgets
+                {t("settings.widgets")}
                 <input type="checkbox" role="switch" checked={!prefs.noWidget} onChange={() => togglePref("noWidget")} />
               </label>
               <label className="setrow">
-                Dark mode
+                {t("settings.dark")}
                 <input type="checkbox" role="switch" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
               </label>
-              <p className="sethead">Scheduler</p>
+              <label className="setrow">
+                {t("settings.language")}
+                <select className="setselect" value={lang} onChange={pickLang}>
+                  {LANGS.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="sethead">{t("settings.scheduler")}</p>
               <button
                 className="setrow setlink"
                 onClick={() => {
@@ -771,45 +801,48 @@ export default function App() {
                   setTasksOpen(true);
                 }}
               >
-                Scheduled tasks
+                {t("settings.tasks")}
                 <span>›</span>
               </button>
               {services && services.peers.length > 0 && (
                 <>
-                  <p className="sethead">Peers</p>
+                  <p className="sethead">{t("settings.peers")}</p>
                   {services.peers.map((p) => (
-                    <div key={p.name} className="svcrow" title={`${p.url}\n${p.apps} apps · ${p.agents} agents · ${p.widgets} widgets · ${p.services} services${p.asOf ? `\nsnapshot ${relTime(p.asOf)}` : ""}${p.error ? `\n${p.error}` : ""}`}>
+                    <div key={p.name} className="svcrow" title={`${p.url}\n${t("settings.peerCounts", { apps: p.apps, agents: p.agents, widgets: p.widgets, services: p.services })}${p.asOf ? `\n${t("settings.snapshot", { time: relTime(p.asOf, lang) })}` : ""}${p.error ? `\n${p.error}` : ""}`}>
                       <span className="svc-ico">🛰</span>
                       <span className="svc-name">{p.name}</span>
-                      {p.health !== "ok" && p.asOf && <span className="svc-port">{relTime(p.asOf)}</span>}
+                      {p.health !== "ok" && p.asOf && <span className="svc-port">{relTime(p.asOf, lang)}</span>}
                       <span className={`status ${p.health}`}>
                         <i />
-                        {HEALTH[p.health]}
+                        {t(p.health === "ok" ? "status.up" : "status.down")}
                       </span>
                     </div>
                   ))}
                 </>
               )}
-              <p className="sethead">Services</p>
+              <p className="sethead">{t("settings.services")}</p>
               {services === null ? (
-                <p className="setnote">Loading…</p>
+                <p className="setnote">{t("common.loading")}</p>
               ) : services.services.length ? (
-                services.services.map((s) => (
-                  <div key={`${s.peer ?? ""}/${s.app}`} className="svcrow" title={`${s.peer ? `${s.peer}/` : ""}${s.app} · 127.0.0.1:${s.port}${s.hidden ? " · hidden" : ""}`}>
+                services.services.map((s) => {
+                  const statusKey = s.status === "active" ? HEALTH[s.health] : STATUS[s.status];
+                  return (
+                  <div key={`${s.peer ?? ""}/${s.app}`} className="svcrow" title={`${s.peer ? `${s.peer}/` : ""}${s.app} · 127.0.0.1:${s.port}${s.hidden ? ` · ${t("status.hidden")}` : ""}`}>
                     <span className="svc-ico">
                       <Icon icon={s.icon} fallback="📦" />
                     </span>
-                    <span className="svc-name">{s.title}</span>
+                    <span className="svc-name">{localized(lang, s).title}</span>
                     {s.peer && <span className="svc-peer">{s.peer}</span>}
                     <span className="svc-port">:{s.port}</span>
                     <span className={`status ${s.status === "active" ? s.health : s.status}`}>
                       <i />
-                      {s.status === "active" ? HEALTH[s.health] || "?" : STATUS[s.status]}
+                      {statusKey ? t(statusKey) : "?"}
                     </span>
                   </div>
-                ))
+                  );
+                })
               ) : (
-                <p className="setnote">No services registered</p>
+                <p className="setnote">{t("settings.noServices")}</p>
               )}
             </div>
           </div>

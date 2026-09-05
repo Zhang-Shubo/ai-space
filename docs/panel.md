@@ -21,9 +21,10 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 | Apps | every registered manifest that has a `url`, with `status` other than `archived`, minus the hidden set | Tile: `icon` and `title`, nothing else on the icon. Click opens `url`. Hover shows the description, the status (health when the app declares `service.health`) and the repository. |
 | Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title, with the owning app's icon in the corner when it differs from the avatar; click opens the chat in a floating panel over the page, on that agent. |
 | Widgets | `widgets:` of every visible app | `items` cards render the list in the house style; `embed` cards load the app's page in a sandboxed iframe through ai-space. |
-| Settings | built in | The last tile of the Apps grid, not hidden, reordered or uninstalled. It opens a floating panel near the top of the page with the browser preferences (hover details, desk pet, widgets, dark mode), the scheduled tasks, the peers and the services. |
+| Settings | built in | The last tile of the Apps grid, not hidden, reordered or uninstalled. It opens a floating panel near the top of the page with the browser preferences (hover details, desk pet, widgets, dark mode, language), the scheduled tasks, the peers and the services. |
 
 | Services (in Settings) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. |
+| Language (in Settings) | the browser's preferences | English or Chinese for everything the panel owns; the browser's language is the default. Apps' titles and descriptions follow when their manifest has an `i18n:` section. Design in [i18n.md](i18n.md). |
 | Desk pet (in Settings) | the browser's preferences | A sprite walking along the bottom edge. Off by a switch; any pet from [petdex.dev](https://petdex.dev) by name: the name is looked up in petdex's public manifest, the sheet URL is kept in `localStorage` with the other preferences, and the bundled capybara stands in when the sheet no longer loads. Pets are user-submitted fan art; the browser talks to petdex directly and sends no Referer, which its hotlink protection rejects. |
 | Tasks (a floating panel opened from Settings) | every task the scheduler knows, grouped by app | One row per task: status dot, name, effective schedule, last outcome and duration, next run, target kind; `api` and `override` badges; disabled and orphaned tasks muted. A row expands to the last twenty runs with error text and captured output. Read-only: it uses the scheduler's `GET /api/tasks` and `GET /api/tasks/:id/runs`, which carry no token; running or toggling a task still goes through the token-guarded routes from the machine. |
 
@@ -122,8 +123,9 @@ src/space/panel/    registry.ts (registered manifests), layout.ts (panel_kv), he
 src/space/peers/    other machines' panels merged into this one, and this one served to a hub (peers.md)
 src/space/agents/   runtime.ts (claude process + SSE), sessions.ts (chat_sessions),
                     transcript.ts, api.ts (routes, space agent)
-src/web/            index.html, main.tsx, App.tsx, Chat.tsx, Tasks.tsx, Pet.tsx, petdex.ts (pet lookup),
-                    styles.css, api.ts, routes.ts (HTML import + public files), public/ (PWA shell, pet sprite)
+src/web/            index.html, main.tsx (language root), App.tsx, Chat.tsx, Tasks.tsx, Pet.tsx, petdex.ts (pet lookup),
+                    i18n.ts (dictionaries, language choice), styles.css, api.ts, routes.ts (HTML import + public files),
+                    public/ (PWA shell, pet sprite)
 ```
 
 `bun run dev` starts ai-space with `SPACE_DEV=1`, which turns on Bun's dev server for the page (hot reload); the default is one bundle at boot.

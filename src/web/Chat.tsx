@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { agentBase, type AgentInfo, type ChatSession, getJson, isImgIcon, relTime } from "./api.ts";
+import { localized, useLang } from "./i18n.ts";
 
 // Chat window (a floating panel). The server streams the runtime's stream-json events over SSE.
 // - Mounted permanently (closing only slides it away) so conversations and session ids survive.
@@ -151,6 +152,11 @@ const EMPTY_CONV: Conv = { agent: null, msgs: [], sid: null, busy: false, queued
 type Runner = { queue: string[]; running: boolean; active: { ctrl: AbortController; typer: { target: string } } | null };
 
 export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean; agent: AgentInfo; onClose: () => void; onSwitch?: (a: AgentInfo) => void }) {
+  const { lang, t } = useLang();
+  // Status lines are written into the message state while a turn streams, so they read `t` through a
+  // ref: a language change mid-turn applies from the next status on.
+  const tRef = useRef(t);
+  tRef.current = t;
   const [convs, setConvs] = useState<Record<string, Conv>>({});
   const [input, setInput] = useState("");
   const [stick, setStick] = useState(true); // stick to the bottom unless the user scrolled up
@@ -215,7 +221,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
     let aiIdx = -1;
     patch(turnKey, (v) => {
       aiIdx = v.msgs.length;
-      return { ...v, msgs: [...v.msgs, { role: "ai", text: "", tools: [], denied: [], status: "Starting…", live: true }] };
+      return { ...v, msgs: [...v.msgs, { role: "ai", text: "", tools: [], denied: [], status: tRef.current("chat.starting"), live: true }] };
     });
     const upd = (fn: (m: Extract<Msg, { role: "ai" }>) => Msg) =>
       patch(turnKey, (v) => {
@@ -290,7 +296,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
           }
           if (ev.type === "system" && ev.subtype === "init") {
             setSid(ev.session_id);
-            upd((x) => ({ ...x, status: `Thinking… (${ev.model || "claude"})` }));
+            upd((x) => ({ ...x, status: tRef.current("chat.thinkingModel", { model: ev.model || "claude" }) }));
           } else if (ev.type === "stream_event" && ev.event?.delta?.type === "text_delta") {
             streamed += ev.event.delta.text;
             setTarget(acc + streamed);
@@ -309,7 +315,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
               if (b.type === "tool_use" && b.id && !seenTools.has(b.id)) {
                 seenTools.add(b.id);
                 toolNames.set(b.id, b.name || "tool");
-                upd((x) => ({ ...x, status: `Running ${b.name}…`, tools: [...x.tools, { name: b.name || "tool", hint: toolHint(b.input) }] }));
+                upd((x) => ({ ...x, status: tRef.current("chat.running", { name: b.name || "tool" }), tools: [...x.tools, { name: b.name || "tool", hint: toolHint(b.input) }] }));
               }
           } else if (ev.type === "user") {
             // Tool results: a call the headless run was not allowed to make comes back as an error; show it.
@@ -324,7 +330,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
             }
           } else if (ev.type === "result") {
             if (ev.session_id) setSid(ev.session_id);
-            if (ev.is_error && !acc) setTarget(String(ev.result || ev.subtype || "Something went wrong"));
+            if (ev.is_error && !acc) setTarget(String(ev.result || ev.subtype || tRef.current("chat.wentWrong")));
           } else if (ev.type === "error") {
             setTarget((typer.target ? typer.target + "\n\n" : "") + `⚠️ ${ev.error}`);
           }
@@ -332,10 +338,10 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
       }
     } catch (e) {
       const err = e as Error;
-      if (err.name === "AbortError") setTarget((typer.target ? typer.target + "\n\n" : "") + "⏹ Interrupted");
+      if (err.name === "AbortError") setTarget((typer.target ? typer.target + "\n\n" : "") + tRef.current("chat.interrupted"));
       else setTarget((typer.target ? typer.target + "\n\n" : "") + `⚠️ ${err.message || err}`);
     }
-    if (!typer.target) typer.target = "(no output)";
+    if (!typer.target) typer.target = tRef.current("chat.noOutput");
     typer.done = true;
     if (typer.timer) {
       clearInterval(typer.timer);
@@ -391,7 +397,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
     setPerm(v);
     permRef.current = v;
     localStorage.setItem("chat-perm", v);
-    send("I have granted more permissions. Please finish the step that was refused for lack of permission.");
+    send(t("chat.retryMessage"));
   };
 
   const toggleHist = async () => {
@@ -414,7 +420,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
       const j = await getJson<{ messages: ({ role: "user"; text: string } | { role: "ai"; text: string; tools: Tool[] })[] }>(`${base}/sessions/${encodeURIComponent(s.sid)}`);
       msgs = j.messages.map((m) => (m.role === "ai" ? { denied: [], ...m } : m));
     } catch (e) {
-      msgs = [{ role: "ai", text: `⚠️ Transcript unavailable (${(e as Error).message}); the session is resumed, continue from here.`, tools: [], denied: [] }];
+      msgs = [{ role: "ai", text: t("chat.transcriptUnavailable", { error: (e as Error).message }), tools: [], denied: [] }];
     }
     patch(key, (v) => ({ ...v, sid: s.sid, msgs }));
     setStick(true);
@@ -422,18 +428,19 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
   };
 
   const tabs = Object.entries(convs);
+  const shown = localized(lang, agent);
 
   return (
     // Always mounted so conversations survive closing; the overlay is hidden, not removed.
     <div className={`overlay${open ? "" : " off"}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <aside className="chat" role="dialog" aria-label={agent.title}>
+      <aside className="chat" role="dialog" aria-label={shown.title}>
       {tabs.length > 1 && (
         <div className="chat-tabs">
           {tabs.map(([k, v]) => (
             <button
               key={k}
               className={`chat-tab ${k === key ? "on" : ""}`}
-              title={v.agent?.title || k}
+              title={v.agent ? localized(lang, v.agent).title : k}
               onClick={() => {
                 if (k !== key && v.agent) onSwitch?.(v.agent);
               }}
@@ -450,44 +457,44 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
             <span className="chat-ava">
               <Ava icon={agent.avatar} />
             </span>
-            <b>{agent.title}</b>
-            <span className="chat-sub">{conv.busy ? `Thinking…${conv.queued ? ` (+${conv.queued} queued)` : ""}` : conv.sid ? "in session" : "new session"}</span>
+            <b>{shown.title}</b>
+            <span className="chat-sub">{conv.busy ? `${t("chat.thinking")}${conv.queued ? t("chat.queued", { n: conv.queued }) : ""}` : conv.sid ? t("chat.inSession") : t("chat.newSession")}</span>
             {conv.busy && (
-              <button className="chat-hbtn" title="Interrupt" onClick={stop}>
+              <button className="chat-hbtn" title={t("chat.interrupt")} onClick={stop}>
                 ⏹
               </button>
             )}
-            <button className="chat-hbtn" title="History" onClick={toggleHist}>
+            <button className="chat-hbtn" title={t("chat.history")} onClick={toggleHist}>
               🕘
             </button>
-            <button className="chat-hbtn" title="New conversation" onClick={reset}>
+            <button className="chat-hbtn" title={t("chat.newConversation")} onClick={reset}>
               ↺
             </button>
-            <button className="chat-hbtn" title="Close" onClick={onClose}>
+            <button className="chat-hbtn" title={t("common.close")} onClick={onClose}>
               ✕
             </button>
           </div>
           <div className="chat-opts">
-            <select className="chat-model" value={model} onChange={pickModel} title="Model (next message)">
-              <option value="">default model</option>
-              <option value="haiku">haiku · fast</option>
-              <option value="sonnet">sonnet</option>
-              <option value="opus">opus · strong</option>
-              <option value="fable">fable · strongest</option>
+            <select className="chat-model" value={model} onChange={pickModel} title={t("chat.modelTitle")}>
+              <option value="">{t("chat.modelDefault")}</option>
+              <option value="haiku">{t("chat.modelHaiku")}</option>
+              <option value="sonnet">{t("chat.modelSonnet")}</option>
+              <option value="opus">{t("chat.modelOpus")}</option>
+              <option value="fable">{t("chat.modelFable")}</option>
             </select>
-            <select className="chat-model" value={perm} onChange={pickPerm} title="Write access (next message)">
-              <option value="">🔒 read-only</option>
-              <option value="acceptEdits">✏️ edit files</option>
-              <option value="bypassPermissions">⚡ all permissions</option>
+            <select className="chat-model" value={perm} onChange={pickPerm} title={t("chat.permTitle")}>
+              <option value="">{t("chat.permRead")}</option>
+              <option value="acceptEdits">{t("chat.permEdit")}</option>
+              <option value="bypassPermissions">{t("chat.permAll")}</option>
             </select>
           </div>
           {hist && (
             <div className="chat-hist">
-              {hist.length === 0 && <p className="hist-empty">No past sessions</p>}
+              {hist.length === 0 && <p className="hist-empty">{t("chat.noSessions")}</p>}
               {hist.map((s) => (
                 <button key={s.sid} className="hist-item" onClick={() => pickSession(s)}>
-                  <span className="hist-title">{s.title || "(untitled)"}</span>
-                  <span className="hist-time">{relTime(s.ts)}</span>
+                  <span className="hist-title">{s.title || t("chat.untitled")}</span>
+                  <span className="hist-time">{relTime(s.ts, lang)}</span>
                 </button>
               ))}
             </div>
@@ -499,9 +506,9 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
               <span className="hello-ava">
                 <Ava icon={agent.avatar} />
               </span>
-              <b>{agent.title}</b>
+              <b>{shown.title}</b>
               <br />
-              {agent.description || (agent.app === "space" ? "Ask about the space: apps, manifests, files." : agent.id)}
+              {shown.description || (agent.app === "space" ? t("chat.helloSpace") : agent.id)}
             </div>
           )}
           {conv.msgs.map((m, i) => (
@@ -519,8 +526,8 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
               {m.role === "ai" ? <span className={`md ${m.live ? "live" : ""}`} dangerouslySetInnerHTML={{ __html: mdHtml(m.text) }} /> : linkNodes(m.text)}
               {m.role === "ai" && m.denied.length > 0 && (
                 <span className="msg-denied">
-                  ⛔ {m.denied.join(", ")} was refused for lack of permission
-                  {!m.live && <button onClick={() => retryWithPerm(m.denied)}>Grant and retry</button>}
+                  {t("chat.denied", { tools: m.denied.join(", ") })}
+                  {!m.live && <button onClick={() => retryWithPerm(m.denied)}>{t("chat.grantRetry")}</button>}
                 </span>
               )}
               {m.role === "ai" && m.live && m.status && <span className="msg-status">{m.status}</span>}
@@ -528,7 +535,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
           ))}
         </div>
         {!stick && conv.msgs.length > 0 && (
-          <button className="chat-down" title="Latest" onClick={toLatest}>
+          <button className="chat-down" title={t("chat.latest")} onClick={toLatest}>
             ↓
           </button>
         )}
@@ -537,7 +544,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
             ref={inputRef}
             rows={1}
             value={input}
-            placeholder={conv.busy ? "Keep typing; sent when the reply finishes…" : "Message, Enter to send"}
+            placeholder={conv.busy ? t("chat.placeholderBusy") : t("chat.placeholder")}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

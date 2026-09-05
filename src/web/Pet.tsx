@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLang } from "./i18n.ts";
 
 // Desk pet: a sprite sheet in the Codex format (8 columns; v1 9 rows and v2 11 rows mean the same,
 // cells 12:13). The bundled default is a capybara from petdex.dev at /pet.webp, stored at half size;
@@ -27,6 +28,7 @@ type Cell = { w: number; h: number };
  * `onError` fires once so the owner can re-resolve or forget the choice.
  */
 export default function Pet({ sheet = DEFAULT_SHEET, onError }: { sheet?: string; onError?: (sheet: string) => void }) {
+  const { t } = useLang();
   const [loaded, setLoaded] = useState<{ src: string; cell: Cell } | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const spr = useRef<HTMLImageElement>(null);
@@ -139,7 +141,7 @@ export default function Pet({ sheet = DEFAULT_SHEET, onError }: { sheet?: string
   if (!loaded) return null;
   const scale = W / CW;
   return (
-    <div className="pet" ref={box} title="Click me" style={{ width: W, height: Math.round(CH * scale) }}>
+    <div className="pet" ref={box} title={t("pet.clickMe")} style={{ width: W, height: Math.round(CH * scale) }}>
       <i style={{ width: CW, height: CH, transform: `scale(${scale})` }}>
         <img ref={spr} src={loaded.src} alt="" referrerPolicy="no-referrer" draggable={false} />
       </i>

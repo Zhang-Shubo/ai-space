@@ -1,3 +1,5 @@
+import { type I18n, LOCALE, type Lang, translate } from "./i18n.ts";
+
 /** Types of the panel API as the browser sees them, plus tiny fetch helpers. */
 
 export type AgentInfo = {
@@ -8,6 +10,8 @@ export type AgentInfo = {
   name: string;
   title: string;
   description?: string;
+  /** Translations of title and description by language tag; see i18n.ts. */
+  i18n?: I18n;
   avatar: string;
   /** The owning app's icon, shown in the corner of the tile. */
   appIcon: string;
@@ -23,6 +27,7 @@ export type AppInfo = {
   stale?: boolean;
   title: string;
   description?: string;
+  i18n?: I18n;
   icon: string;
   url?: string;
   repo?: string;
@@ -31,13 +36,14 @@ export type AppInfo = {
   hidden: boolean;
   service?: { port: number; health: "ok" | "down" | "unknown" };
   agents: AgentInfo[];
-  widgets: { id: string; name: string; title: string; kind: string; size: string; link: string }[];
+  widgets: { id: string; name: string; title: string; i18n?: I18n; kind: string; size: string; link: string }[];
 };
 
 export type ServiceInfo = {
   app: string;
   peer?: string;
   title: string;
+  i18n?: I18n;
   icon: string;
   port: number;
   health: "ok" | "down" | "unknown";
@@ -53,6 +59,7 @@ export type WidgetInfo = {
   app: string;
   name: string;
   title: string;
+  i18n?: I18n;
   icon: string;
   link: string;
   kind: "items" | "embed";
@@ -103,15 +110,21 @@ export const repoUrl = (r: string) => {
 export const agentBase = (a: { peer?: string; app: string; name: string }) =>
   `${a.peer ? `/api/peers/${encodeURIComponent(a.peer)}` : "/api"}/agents/${encodeURIComponent(a.app)}/${encodeURIComponent(a.name)}`;
 
-export const relTime = (iso: string | number) => {
+// The time helpers take the panel language (i18n.ts); English is the default so scripts and tests
+// need not pass one.
+
+export const relTime = (iso: string | number, lang: Lang = "en") => {
   const ms = typeof iso === "number" ? iso : new Date(iso).getTime();
   const m = Math.round((Date.now() - ms) / 60000);
   if (Number.isNaN(m)) return "";
-  if (m < 1) return "just now";
-  if (m < 60) return `${m} min ago`;
+  if (m < 1) return translate(lang, "time.justNow");
+  if (m < 60) return translate(lang, "time.minAgo", { n: m });
   const h = Math.round(m / 60);
-  return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+  return h < 24 ? translate(lang, "time.hAgo", { n: h }) : translate(lang, "time.dAgo", { n: Math.round(h / 24) });
 };
+
+/** A date and time in the language's locale. */
+export const dateTime = (iso: string | number, lang: Lang = "en") => new Date(iso).toLocaleString(LOCALE[lang]);
 
 // ---------------------------------------------------------------- scheduler
 
@@ -145,32 +158,33 @@ export type TaskInfo = {
 /** One run as `GET /api/tasks/:id/runs` shows it (epoch milliseconds). */
 export type RunInfo = { id: number; taskId: string; startedAt: number; endedAt: number; status: RunStatus; error?: string; output?: string };
 
-export const fmtDuration = (ms: number) => {
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
+export const fmtDuration = (ms: number, lang: Lang = "en") => {
+  const t = (key: Parameters<typeof translate>[1], vars: Record<string, number>) => translate(lang, key, vars);
+  if (ms < 1000) return t("time.ms", { n: Math.max(0, Math.round(ms)) });
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
+  if (s < 60) return t("time.s", { s });
   const m = Math.floor(s / 60);
-  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+  if (m < 60) return s % 60 ? t("time.ms_", { m, s: s % 60 }) : t("time.m", { m });
   const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  if (h < 24) return m % 60 ? t("time.hm", { h, m: m % 60 }) : t("time.h", { h });
   const d = Math.floor(h / 24);
-  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+  return h % 24 ? t("time.dh", { d, h: h % 24 }) : t("time.d", { d });
 };
 
-export const scheduleText = (s: Schedule) => {
-  if (s.kind === "every") return `every ${fmtDuration(s.everyMs)}`;
+export const scheduleText = (s: Schedule, lang: Lang = "en") => {
+  if (s.kind === "every") return translate(lang, "time.every", { duration: fmtDuration(s.everyMs, lang) });
   if (s.kind === "cron") return s.tz ? `${s.expr} (${s.tz})` : s.expr;
-  return `once at ${new Date(s.at).toLocaleString()}`;
+  return translate(lang, "time.onceAt", { date: dateTime(s.at, lang) });
 };
 
 /** Forward-looking counterpart of relTime. */
-export const untilTime = (iso: string) => {
+export const untilTime = (iso: string, lang: Lang = "en") => {
   const ms = new Date(iso).getTime() - Date.now();
   if (Number.isNaN(ms)) return "";
-  if (ms < 30_000) return "now";
+  if (ms < 30_000) return translate(lang, "time.now");
   const m = Math.round(ms / 60000);
-  if (m < 1) return "in <1 min";
-  if (m < 60) return `in ${m} min`;
+  if (m < 1) return translate(lang, "time.inLessMin");
+  if (m < 60) return translate(lang, "time.inMin", { n: m });
   const h = Math.round(m / 60);
-  return h < 24 ? `in ${h} h` : `in ${Math.round(h / 24)} d`;
+  return h < 24 ? translate(lang, "time.inH", { n: h }) : translate(lang, "time.inD", { n: Math.round(h / 24) });
 };
