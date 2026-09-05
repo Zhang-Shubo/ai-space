@@ -153,6 +153,14 @@ function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: 
       window.removeEventListener("pointercancel", up);
       setResizing(null);
       onResize(sizeAt(ev), true);
+      // The release also produces a click, wherever the pointer ended up; a click on the
+      // background would leave edit mode, so the one that follows this drag is swallowed.
+      const swallow = (c: MouseEvent) => {
+        c.stopPropagation();
+        c.preventDefault();
+      };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 400);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
