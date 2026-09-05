@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRoutes } from "./api.ts";
@@ -11,6 +11,7 @@ let server: ReturnType<typeof Bun.serve>;
 let base = "";
 let appDir = "";
 let scheduler: Scheduler;
+let store: Store;
 // What `POST /api/apps/sync` discovers; tests add directories to it.
 const discovered: string[] = [];
 
@@ -19,7 +20,7 @@ const auth = { authorization: "Bearer t0k", "content-type": "application/json" }
 beforeAll(async () => {
   appDir = await mkdtemp(join(tmpdir(), "space-api-"));
   await writeFile(join(appDir, "space.yaml"), "name: demo\ntasks:\n  - name: echo\n    every: 1h\n    run: { command: 'echo hi' }\n");
-  const store = new Store(":memory:");
+  store = new Store(":memory:");
   scheduler = new Scheduler({ store, log: () => {} });
   scheduler.syncManifest(await loadManifest(appDir));
   discovered.push(appDir);
@@ -109,9 +110,42 @@ describe("scheduler api", () => {
     expect(scheduler.appDir("fresh")).toBe(fresh);
     expect((await call("/api/apps/fresh/sync", { method: "POST", headers: auth })).status).toBe(200);
 
-    // Re-running is idempotent: nothing created twice.
+    // Re-running is idempotent: nothing created twice, nothing gone.
     const again = await call("/api/apps/sync", { method: "POST", headers: auth });
     expect(again.body.synced.every((s: { created: string[] }) => s.created.length === 0)).toBe(true);
+    expect(again.body.gone).toEqual([]);
+  });
+
+  test("workspace sync forgets an app whose directory left the workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "space-ws-"));
+    const leaving = join(root, "leaving");
+    await mkdir(leaving);
+    await writeFile(join(leaving, "space.yaml"), "name: leaving\ntasks:\n  - name: tick\n    every: 1h\n    run: { command: 'echo tick' }\n");
+    discovered.push(leaving);
+    const goneApps: string[] = [];
+    const routes = createRoutes({ scheduler, store, token: "t0k", discover: async () => [...discovered], onGone: async (app) => void goneApps.push(app) });
+    const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", routes });
+    const at = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${srv.port}${path}`, init).then(async (r) => ({ status: r.status, body: (await r.json()) as Body }));
+    try {
+      expect((await at("/api/apps/sync", { method: "POST", headers: auth })).body.synced.map((s: { app: string }) => s.app)).toContain("leaving");
+      const tick = (await at("/api/tasks")).body.tasks.find((t: { app: string }) => t.app === "leaving");
+      expect(tick.orphaned).toBe(false);
+
+      // The directory disappears (symlink removed, checkout deleted): the next workspace sync drops it.
+      discovered.splice(discovered.indexOf(leaving), 1);
+      await rm(leaving, { recursive: true });
+      const res = await at("/api/apps/sync", { method: "POST", headers: auth });
+      expect(res.body.gone).toEqual([{ app: "leaving", created: [], updated: [], orphaned: ["tick"] }]);
+      expect(goneApps).toEqual(["leaving"]);
+      expect(scheduler.appDir("leaving")).toBeUndefined();
+      expect((await at("/api/apps/leaving/sync", { method: "POST", headers: auth })).status).toBe(404);
+      // The task stays in the store, orphaned, with its history.
+      expect((await at(`/api/tasks/${tick.id}`)).body.task.orphaned).toBe(true);
+      // A broken manifest is not "gone": the directory is still there.
+      expect((await at("/api/apps/sync", { method: "POST", headers: auth })).body.gone).toEqual([]);
+    } finally {
+      srv.stop(true);
+    }
   });
 
   test("manifest override via PATCH and re-sync through the API", async () => {

@@ -156,7 +156,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     peers,
     onCreate: syncDir,
     onRemove: async (app) => {
-      scheduler.syncManifest({ app, dir: join(ws.apps, app), spec: 1, status: "archived", agents: [], widgets: [], tasks: [] });
+      scheduler.forget(app);
     },
   });
   const agentRoutes = createAgentRoutes({ ws, registry, layout, sessions, defaultModel: config.chatModel, extraArgs: config.chatArgs, envFor: (app) => storage.envFor(app), peers });
@@ -170,7 +170,17 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     // The web UI is bundled once at boot; SPACE_DEV=1 turns on Bun's dev server (hot reload) instead.
     development: process.env.SPACE_DEV === "1",
     routes: {
-      ...createRoutes({ scheduler, store, token: config.apiToken, onManifest: provision, discover }),
+      ...createRoutes({
+        scheduler,
+        store,
+        token: config.apiToken,
+        onManifest: provision,
+        discover,
+        onGone: async (app) => {
+          registry.remove(app);
+          console.log(`[space] ${app}: directory gone, deregistered`);
+        },
+      }),
       ...createStorageRoutes({ storage, token: config.apiToken }),
       ...createNotifyRoutes({ notify, store: notifyStore, token: config.apiToken, appForToken: (t) => storage.appForToken(t) }),
       ...panelRoutes,

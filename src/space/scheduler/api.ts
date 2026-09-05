@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { type Manifest, loadManifest } from "./manifest.ts";
 import { Scheduler, type SyncSummary } from "./scheduler.ts";
 import type { Store } from "./store.ts";
@@ -14,7 +15,7 @@ import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEna
  *   DELETE /api/tasks/:id
  *   POST   /api/tasks/:id/run         force a run now
  *   GET    /api/tasks/:id/runs?limit  run history, newest first
- *   POST   /api/apps/sync             discover every app directory and re-read each space.yaml
+ *   POST   /api/apps/sync             discover every app directory and re-read each space.yaml; forget the ones that left
  *   POST   /api/apps/:app/sync        re-read the app's space.yaml
  *
  * Mutating routes require `Authorization: Bearer <token>` when a token is configured.
@@ -29,6 +30,8 @@ export type ApiOptions = {
   onManifest?: (manifest: Manifest) => Promise<void>;
   /** Every app directory the workspace holds right now; `POST /api/apps/sync` re-reads them all. */
   discover?: () => Promise<string[]>;
+  /** Called when a workspace sync finds a registered app's directory gone (panel deregistration). */
+  onGone?: (app: string) => Promise<void>;
 };
 
 type Handler = (req: Request & { params: Record<string, string> }) => Response | Promise<Response>;
@@ -107,7 +110,7 @@ export function createRoutes(opts: ApiOptions): Routes {
 
     // The workspace-wide sync: what boot does, on demand. A directory that appeared after
     // boot is registered here; one whose manifest fails is reported and skipped, the rest
-    // still sync. Only apps the scheduler already knows can use the per-app route below.
+    // still sync; one that disappeared is forgotten and reported under `gone`. Only apps the scheduler already knows can use the per-app route below.
     "/api/apps/sync": {
       POST: guard(async () => {
         const dirs = opts.discover ? await opts.discover() : [];
@@ -120,7 +123,23 @@ export function createRoutes(opts: ApiOptions): Routes {
             skipped.push({ dir, error: (e as Error).message ?? String(e) });
           }
         }
-        return json({ ok: true, synced, skipped });
+        // An app the scheduler knows but discovery no longer lists has left the workspace
+        // (directory or symlink removed). Its manifest must really be missing: a directory
+        // whose manifest merely failed to parse is reported in `skipped` and stays registered.
+        const gone: SyncSummary[] = [];
+        if (opts.discover) {
+          const seen = new Set(synced.map((s) => s.app));
+          const skippedDirs = new Set(skipped.map((s) => s.dir));
+          for (const app of scheduler.apps()) {
+            const dir = scheduler.appDir(app);
+            if (seen.has(app) || !dir || skippedDirs.has(dir) || (await Bun.file(join(dir, "space.yaml")).exists())) continue;
+            const summary = scheduler.forget(app);
+            if (!summary) continue;
+            if (opts.onGone) await opts.onGone(app);
+            gone.push(summary);
+          }
+        }
+        return json({ ok: true, synced, skipped, gone });
       }),
     },
 

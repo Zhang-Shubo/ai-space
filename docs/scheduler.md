@@ -132,7 +132,7 @@ PATCH  /api/tasks/:id             { enabled?, schedule? }   null clears a manife
 DELETE /api/tasks/:id             API tasks and orphaned manifest tasks only
 POST   /api/tasks/:id/run         force a run now (202, or 409 when already running)
 GET    /api/tasks/:id/runs?limit  history, newest first
-POST   /api/apps/sync             discover every app directory and re-read each space.yaml (registers new apps)
+POST   /api/apps/sync             discover every app directory and re-read each space.yaml (registers new apps, forgets the ones whose directory is gone: `gone`)
 POST   /api/apps/:app/sync        re-read the app's space.yaml
 ```
 

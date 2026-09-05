@@ -113,6 +113,23 @@ export class Scheduler {
     return this.appDirs.get(app);
   }
 
+  /** Every app a manifest sync has registered, sorted. */
+  apps(): string[] {
+    return [...this.appDirs.keys()].sort();
+  }
+
+  /**
+   * Drop an app whose directory is gone: its manifest tasks become orphaned (kept in
+   * the store with their run history) and the per-app sync route stops knowing it.
+   */
+  forget(app: string): SyncSummary | undefined {
+    const dir = this.appDirs.get(app);
+    if (dir === undefined) return undefined;
+    const summary = this.syncManifest({ app, dir, spec: 1, status: "archived", agents: [], widgets: [], tasks: [] });
+    this.appDirs.delete(app);
+    return summary;
+  }
+
   // ---------------------------------------------------------------- tick
 
   async tick(): Promise<void> {
