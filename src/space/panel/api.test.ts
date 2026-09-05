@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadManifest } from "../scheduler/manifest.ts";
@@ -16,6 +16,7 @@ let base = "";
 let home = "";
 const registry = new AppRegistry();
 const removed: string[] = [];
+const stopCalls: string[] = [];
 
 // Loopback calls the panel makes (health, widget sources) are answered here.
 const fakeFetch = (async (input: string | URL | Request) => {
@@ -75,6 +76,10 @@ widgets:
       },
       onRemove: async (app) => {
         removed.push(app);
+      },
+      stopService: async (app) => {
+        stopCalls.push(app);
+        return app === "stubborn" ? { ok: false, error: "exit 1: unit not found" } : { ok: true };
       },
       resolveLink: async (link) => ({ name: "resolved-app", title: "Resolved", icon: "🔗", description: `from ${link}`, url: "" }),
       fetch: fakeFetch,
@@ -167,10 +172,50 @@ describe("panel api", () => {
     expect((await call("/api/apps", jsonInit("POST", { name: "bad name" }))).status).toBe(400);
     expect((await call("/api/apps", jsonInit("POST", { name: "x", icon: "icon.svg" }))).status).toBe(400);
 
-    expect((await call("/api/apps/notes", { method: "DELETE" })).status).toBe(409);
-    expect((await call("/api/apps/hand-made", { method: "DELETE" })).body).toEqual({ ok: true });
+    const del = await call("/api/apps/hand-made", { method: "DELETE" });
+    expect(del.body).toMatchObject({ ok: true, app: "hand-made", stopped: "none", dir: { kind: "deleted" }, data: join(home, "data", "hand-made") });
     expect(removed).toEqual(["hand-made"]);
     expect(await Bun.file(join(home, "apps", "hand-made", "space.yaml")).exists()).toBe(false);
     expect((await call("/api/apps/hand-made")).status).toBe(404);
+  });
+
+  test("uninstalls a code app: the service is stopped, the checkout moves to trash, the app is forgotten", async () => {
+    const apps = join(home, "apps");
+    await mkdir(join(apps, "leaving", ".git"), { recursive: true });
+    await writeFile(join(apps, "leaving", "space.yaml"), "name: leaving\ntitle: Leaving\nurl: https://l.example.com\nservice: { command: bun x.ts, port: 8790 }\n");
+    await writeFile(join(apps, "leaving", "keep-me.txt"), "code");
+    await registry.set(await loadManifest(join(apps, "leaving")));
+    // A symlinked checkout (the deployment layout): the link goes, the target stays.
+    await mkdir(join(home, "checkouts", "linked", ".git"), { recursive: true });
+    await writeFile(join(home, "checkouts", "linked", "space.yaml"), "name: linked\ntitle: Linked\nurl: https://k.example.com\n");
+    await symlink(join(home, "checkouts", "linked"), join(apps, "linked"));
+    await registry.set(await loadManifest(join(apps, "linked")));
+    // A service whose stop command fails: nothing changes.
+    await mkdir(join(apps, "stubborn", ".git"), { recursive: true });
+    await writeFile(join(apps, "stubborn", "space.yaml"), "name: stubborn\nservice: { command: bun x.ts, port: 8791 }\n");
+    await registry.set(await loadManifest(join(apps, "stubborn")));
+    removed.length = 0;
+    stopCalls.length = 0;
+
+    const moved = await call("/api/apps/leaving", { method: "DELETE" });
+    expect(moved.body).toMatchObject({ ok: true, stopped: "ok", dir: { kind: "moved" } });
+    expect(stopCalls).toEqual(["leaving"]);
+    expect(moved.body.dir.to.startsWith(join(home, "trash", "leaving-"))).toBe(true);
+    expect(await Bun.file(join(moved.body.dir.to, "keep-me.txt")).text()).toBe("code");
+    expect(await Bun.file(join(apps, "leaving", "space.yaml")).exists()).toBe(false);
+    expect((await call("/api/apps/leaving")).status).toBe(404);
+
+    const unlinked = await call("/api/apps/linked", { method: "DELETE" });
+    expect(unlinked.body).toMatchObject({ ok: true, stopped: "none", dir: { kind: "unlinked" } });
+    expect((await readdir(apps)).includes("linked")).toBe(false);
+    expect(await Bun.file(join(home, "checkouts", "linked", "space.yaml")).exists()).toBe(true);
+    expect(removed).toEqual(["leaving", "linked"]);
+
+    const failed = await call("/api/apps/stubborn", { method: "DELETE" });
+    expect(failed.status).toBe(502);
+    expect(failed.body.error).toContain("unit not found");
+    expect(registry.get("stubborn")).toBeDefined();
+    expect(await Bun.file(join(apps, "stubborn", "space.yaml")).exists()).toBe(true);
+    expect(removed).toEqual(["leaving", "linked"]);
   });
 });

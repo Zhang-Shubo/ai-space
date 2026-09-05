@@ -292,4 +292,17 @@ describe("hub", () => {
     new PeerHub([], { store: new PeerStore(hubDb) });
     expect(new PeerStore(hubDb).get("david")).toBeUndefined();
   });
+
+  test("uninstalls a peer app through the hub; the merged lists drop it at once", async () => {
+    await peers.refreshAll();
+    expect((await get(hub, "/api/peers/david/apps/ghost", { method: "DELETE" })).status).toBe(404);
+    const del = await get(hub, "/api/peers/david/apps/media", { method: "DELETE" });
+    expect(del.status).toBe(200);
+    // The peer has no stop command configured: the directory still leaves its workspace.
+    expect(del.body).toMatchObject({ ok: true, app: "media", stopped: "unconfigured", dir: { kind: "moved" } });
+    expect((await get(peerBase, "/api/apps")).body.apps).toEqual([]);
+    expect((await get(hub, "/api/apps?all=1")).body.apps.map((a: Body) => a.id)).toEqual(["media-link", "notes"]);
+    expect((await get(hub, "/api/services")).body.services).toEqual([]);
+    expect((await get(hub, "/api/peers/david/apps/media", { method: "DELETE" })).status).toBe(404);
+  });
 });

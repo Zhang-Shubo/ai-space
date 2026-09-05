@@ -2,7 +2,7 @@ import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { NotifyService, NotifyStore, createNotifyRoutes, createTaskNotifier, loadChannels, parseNotifySpec } from "./space/notify/index.ts";
 import { SessionStore, createAgentRoutes } from "./space/agents/index.ts";
-import { AppRegistry, HealthProbe, LayoutStore, WidgetFeed, createPanelRoutes } from "./space/panel/index.ts";
+import { AppRegistry, HealthProbe, LayoutStore, WidgetFeed, createPanelRoutes, runStopCommand } from "./space/panel/index.ts";
 import { PeerHub, PeerStore, createPeerRoutes, createPeerServeRoutes, loadPeers } from "./space/peers/index.ts";
 import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
 import { type S3Config, StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
@@ -42,6 +42,8 @@ export type Config = {
   chatModel: string;
   /** Extra arguments for the chat runtime (SPACE_CHAT_ARGS), e.g. a permission wrapper. */
   chatArgs: string[];
+  /** Command that stops an app's service when the panel uninstalls it (SPACE_SERVICE_STOP), `{app}` = name; empty = services are not stopped. */
+  serviceStop: string;
   /** What this space calls itself towards a hub (SPACE_NAME); default: the hostname. */
   name: string;
   /** Token a hub must present on `/api/peer/*` (SPACE_HUB_TOKEN); empty = those routes are absent. */
@@ -64,6 +66,7 @@ export function loadConfig(ws: Workspace, env: Record<string, string | undefined
     notifyTasks: env.SPACE_NOTIFY_TASKS?.trim() ?? "",
     chatModel: env.SPACE_CHAT_MODEL?.trim() ?? "sonnet",
     chatArgs: (env.SPACE_CHAT_ARGS ?? "").split(/\s+/).filter(Boolean),
+    serviceStop: env.SPACE_SERVICE_STOP?.trim() ?? "",
     name: env.SPACE_NAME?.trim() || hostname(),
     hubToken: env.SPACE_HUB_TOKEN?.trim() ?? "",
     ...(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim()
@@ -158,6 +161,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     onRemove: async (app) => {
       scheduler.forget(app);
     },
+    ...(config.serviceStop ? { stopService: (app: string) => runStopCommand(config.serviceStop, app) } : {}),
   });
   const agentRoutes = createAgentRoutes({ ws, registry, layout, sessions, defaultModel: config.chatModel, extraArgs: config.chatArgs, envFor: (app) => storage.envFor(app), peers });
 

@@ -1,11 +1,12 @@
-import { resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { PeerHub } from "../peers/hub.ts";
 import type { Workspace } from "../workspace.ts";
 import type { HealthProbe } from "./health.ts";
 import { type LayoutStore, orderBy } from "./layout.ts";
-import { createLinkApp, parseLinkApp, removeLinkApp, resolveLinkWithAgent } from "./links.ts";
+import { createLinkApp, parseLinkApp, resolveLinkWithAgent } from "./links.ts";
 import type { AppRegistry, RegisteredApp } from "./registry.ts";
 import { type AppView, type ServiceView, appView, serviceView } from "./view.ts";
+import { retireAppDir } from "./uninstall.ts";
 import { type WidgetFeed, sourceUrl } from "./widgets.ts";
 
 /**
@@ -15,7 +16,7 @@ import { type WidgetFeed, sourceUrl } from "./widgets.ts";
  *   POST   /api/apps                     { link } or identity fields: create a manifest-only app
  *   GET    /api/apps/:app
  *   PATCH  /api/apps/:app                { hidden }
- *   DELETE /api/apps/:app                manifest-only apps only
+ *   DELETE /api/apps/:app                uninstall: stop the service, take the directory out, forget it
  *   GET    /api/apps/:app/icon
  *   GET    /api/agents/:app/:agent/avatar
  *   GET    /api/services                 every app that declares a service, with its health; peers with theirs
@@ -43,6 +44,8 @@ export type PanelApiOptions = {
   onCreate: (dir: string) => Promise<void>;
   /** Forget an app the panel removed. */
   onRemove: (app: string) => Promise<void>;
+  /** Stop an app's service before it is uninstalled (SPACE_SERVICE_STOP); undefined = nothing stops it. */
+  stopService?: (app: string) => Promise<{ ok: boolean; error?: string }>;
   /** Turn a link into identity fields; default asks the claude runtime. */
   resolveLink?: (link: string) => Promise<Record<string, unknown>>;
   fetch?: typeof fetch;
@@ -143,14 +146,25 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
         const lay = layout.hide(n, body.hidden);
         return json({ ok: true, app: await viewOf(n, new Set(lay.hidden)) });
       }),
+      // Uninstall: the service is stopped first (a stop that fails aborts, the app stays), then the
+      // directory leaves the workspace (see uninstall.ts: code is never deleted) and the app is
+      // forgotten. The data directory is kept.
       DELETE: wrap(async (req) => {
         const n = name(req.params.app);
         const entry = entryOf(n);
-        if (!entry.manifestOnly) return error(409, `app "${n}" has code or a service; hide it instead of deleting it`);
-        await removeLinkApp(opts.ws, n);
+        let stopped: "ok" | "none" | "unconfigured" = "none";
+        if (entry.manifest.service) {
+          if (!opts.stopService) stopped = "unconfigured";
+          else {
+            const r = await opts.stopService(n);
+            if (!r.ok) return error(502, `stopping the service of "${n}" failed: ${r.error ?? "unknown error"}`);
+            stopped = "ok";
+          }
+        }
+        const dir = await retireAppDir(opts.ws, n, entry.manifest.dir, entry.manifestOnly);
         registry.remove(n);
         await opts.onRemove(n);
-        return json({ ok: true });
+        return json({ ok: true, app: n, stopped, dir, data: join(opts.ws.data, n) });
       }),
     },
 

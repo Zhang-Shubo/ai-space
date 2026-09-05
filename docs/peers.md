@@ -67,6 +67,7 @@ Present only when `SPACE_HUB_TOKEN` is set; every route requires `Authorization:
 | Route | Mirrors | Notes |
 | --- | --- | --- |
 | `GET /api/peer/snapshot` | `/api/apps`, `/api/services`, `/api/widgets`, `/api/agents` | One call: `{ ok, name, apps, services, widgets, agents, asOf }`. Apps are the peer's visible ones (its own hidden set and `archived` applied, `manifestOnly` and `url` included), agents and widgets likewise, widgets with their current items payload, services with health. The space agent (`space/assistant`) is not included: the hub has its own. |
+| `DELETE /api/peer/apps/:app` | `DELETE /api/apps/:app` | Uninstall on the peer: its stop command, its directory, its registry ([panel.md](panel.md#arranging-hiding-and-uninstalling-apps)). The hub refreshes the snapshot right after. |
 | `GET /api/peer/apps/:app/icon` | `/api/apps/:app/icon` | Icon files from the app directory. |
 | `GET /api/peer/apps/:app/appcolor` | `/api/panel/appcolor?app=` | |
 | `GET /api/peer/agents/:app/:agent/avatar` | `/api/agents/:app/:agent/avatar` | |
@@ -90,7 +91,7 @@ Module `src/space/peers/`:
 | `merge.ts` | Turns a snapshot into hub views: prefixes ids, sets `peer`, rewrites icon, avatar and embed routes to the hub's proxy, applies the hub's hidden set, marks stale entries. |
 | `hub.ts` | Every configured peer and the merged lists the panel appends. |
 | `serve.ts` | The peer side (`/api/peer/*`). |
-| `api.ts` | `GET /api/peers`, the hub-side hide, and the `/api/peers/:peer/*` proxy routes. |
+| `api.ts` | `GET /api/peers`, the hub-side hide, the forwarded uninstall, and the `/api/peers/:peer/*` proxy routes. |
 
 What changed in the existing modules:
 

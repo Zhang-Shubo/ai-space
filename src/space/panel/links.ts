@@ -7,8 +7,8 @@ import type { Workspace } from "../workspace.ts";
  * Manifest-only apps: what the panel creates when the operator adds a link.
  * The result is `apps/<name>/space.yaml` with identity fields only, so the
  * launcher can show things that are not ai-space services (a page, a tool on
- * another machine, a repository). Only apps created this way can be deleted
- * from the panel; apps with code are hidden instead.
+ * another machine, a repository). Uninstalling one from the panel just removes
+ * the directory (uninstall.ts).
  */
 
 export type LinkApp = {

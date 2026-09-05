@@ -8,6 +8,7 @@ import { peerId } from "./merge.ts";
  *
  *   GET   /api/peers                                    every peer: health, snapshot time, counts, duplicates
  *   PATCH /api/peers/:peer/apps/:app                    { hidden }: hide a peer app on this panel only
+ *   DELETE /api/peers/:peer/apps/:app                   uninstall the app on the peer (forwarded), refresh its snapshot
  *   GET   /api/peers/:peer/apps/:app/icon               ┐
  *   GET   /api/peers/:peer/apps/:app/appcolor           │
  *   GET   /api/peers/:peer/agents/:app/:agent/avatar    │ forwarded to the peer's /api/peer/... with
@@ -27,7 +28,7 @@ export type PeerApiOptions = {
 };
 
 type Handler = (req: Request & { params: Record<string, string> }) => Response | Promise<Response>;
-type Routes = Record<string, Handler | Partial<Record<"GET" | "POST" | "PATCH", Handler>>>;
+type Routes = Record<string, Handler | Partial<Record<"GET" | "POST" | "PATCH" | "DELETE", Handler>>>;
 
 const FORWARD_TIMEOUT_MS = 8_000;
 
@@ -82,6 +83,25 @@ export function createPeerRoutes(opts: PeerApiOptions): Routes {
         const lay = layout.hide(peerId(client.name, app), body.hidden);
         const view = hub.apps(new Set(lay.hidden)).find((a) => a.id === peerId(client.name, app));
         return json({ ok: true, app: view });
+      },
+      // Uninstall on the peer, then refresh its snapshot so the hub's lists drop the app at once.
+      DELETE: async (req) => {
+        let client;
+        try {
+          client = clientOf(req.params.peer);
+        } catch (e) {
+          return error(404, (e as Error).message);
+        }
+        const app = req.params.app ?? "";
+        if (!client.snapshot?.apps.some((a) => a.name === app)) return error(404, `unknown app: ${client.name}/${app}`);
+        let res: Response;
+        try {
+          res = await client.forward(req, `/api/peer/apps/${encodeURIComponent(app)}`, { timeoutMs: FORWARD_TIMEOUT_MS * 10 });
+        } catch (e) {
+          return error(502, `peer ${client.name} unreachable: ${String((e as Error).message ?? e).slice(0, 200)}`);
+        }
+        if (res.ok) await client.refresh().catch(() => {});
+        return res;
       },
     },
 

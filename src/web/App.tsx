@@ -178,6 +178,51 @@ function AddForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
   );
 }
 
+/**
+ * The confirmation behind the uninstall zone: says what will happen to this app (service, directory,
+ * data) and sends the DELETE, to the hub route for a peer's app.
+ */
+function UninstallForm({ app, onClose, onDone }: { app: AppInfo; onClose: () => void; onDone: () => void }) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const path = app.peer ? `/api/peers/${encodeURIComponent(app.peer)}/apps/${encodeURIComponent(app.name)}` : `/api/apps/${encodeURIComponent(app.name)}`;
+  const run = async () => {
+    setErr("");
+    setBusy(true);
+    try {
+      await sendJson("DELETE", path);
+      onDone();
+    } catch (e) {
+      setErr(String((e as Error).message || e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="overlay" onClick={busy ? undefined : onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>
+          Uninstall {app.title}
+          {app.peer && <span className="modal-sub">on {app.peer}</span>}
+        </h3>
+        <ul className="modal-list">
+          {app.service ? <li>Its service is stopped (port {app.service.port}).</li> : <li>It has no service to stop.</li>}
+          {app.manifestOnly ? <li>The link entry is deleted.</li> : <li>Its directory leaves the workspace: a symlink is removed, a checkout is moved to the workspace trash. No code is deleted.</li>}
+          <li>Its tasks, agents and widgets disappear from the panel. The data directory is kept.</li>
+        </ul>
+        {err && <div className="form-err">{err}</div>}
+        <div className="actions">
+          <button className="btn2" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn2 danger" onClick={run} disabled={busy}>
+            {busy ? "Uninstalling…" : "Uninstall"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Prefs = { noPop?: boolean; noPet?: boolean; noWidget?: boolean; pet?: PetChoice };
 
 /**
@@ -266,6 +311,9 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("panel-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
+  // The app dropped on the uninstall zone, awaiting confirmation; `zoneHot` while a tile hovers the zone.
+  const [uninstalling, setUninstalling] = useState<AppInfo | null>(null);
+  const [zoneHot, setZoneHot] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   // The tasks drawer shares the right edge with the chat; opening one closes the other.
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -520,6 +568,29 @@ export default function App() {
           ) : (
             empty("No apps yet. Put an app with a space.yaml under apps/, or long-press the background to add one from a link.")
           )}
+          {editing && (
+            <div
+              className={`dropzone${zoneHot ? " hot" : ""}`}
+              onDragOver={(e) => {
+                if (dragRef.current?.kind !== "apps") return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setZoneHot(true);
+              }}
+              onDragLeave={() => setZoneHot(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setZoneHot(false);
+                const d = dragRef.current;
+                if (d?.kind === "apps") setUninstalling(apps[d.index] ?? null);
+              }}
+            >
+              <span className="dropzone-icon">🗑</span>
+              <span>
+                <b>Uninstall</b> · drop an app here to stop its service and remove it from the space; its data stays
+              </span>
+            </div>
+          )}
         </section>
         <section>
           <h2>Agents</h2>
@@ -570,6 +641,16 @@ export default function App() {
         )}
       </div>
       {!prefs.noPet && <Pet sheet={petSheet} onError={onPetError} />}
+      {uninstalling && (
+        <UninstallForm
+          app={uninstalling}
+          onClose={() => setUninstalling(null)}
+          onDone={() => {
+            setUninstalling(null);
+            reload();
+          }}
+        />
+      )}
       {adding && (
         <AddForm
           onClose={() => setAdding(false)}

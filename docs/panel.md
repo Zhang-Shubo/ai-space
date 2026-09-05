@@ -39,11 +39,25 @@ The launcher must be able to show things that are not ai-space services: a page,
 └── space.yaml       spec, name, title, description, icon, url
 ```
 
-ai-space treats them like any app (they can even declare widgets with a full `source` URL, or agents). The panel creates them when the operator adds a link, and it is the only kind of app the panel deletes: an app with code or a service is hidden instead, and its directory is never touched. A manifest-only directory is not a git repository; it is restored from a workspace backup, not from a clone.
+ai-space treats them like any app (they can even declare widgets with a full `source` URL, or agents). The panel creates them when the operator adds a link, and uninstalling one just removes the directory. A manifest-only directory is not a git repository; it is restored from a workspace backup, not from a clone.
 
 ## Adding an app from a link
 
 Edit mode has an "Add" tile that takes one link. The panel asks the claude runtime to read the page (`claude -p … --allowedTools WebFetch`) and answer with a JSON object of identity fields, validates the answer, writes `apps/<name>/space.yaml`, and syncs the new directory (storage, scheduler, registry) like a boot would. The link itself becomes `url` when the answer names none. Fields can also be posted directly, which is what a script or a skill does.
+
+## Arranging, hiding and uninstalling apps
+
+Everything the operator does to the launcher happens in **edit mode**: long-press (or press and hold the mouse) on the panel background until the tiles start to jiggle; a click on the background leaves it. Edit mode offers four things, none of which need the API token because they come from the browser:
+
+- **Move.** Drag a tile to a new place in its group; the order is saved when the tile is dropped (`PUT /api/panel/layout`). Apps, agents and widgets are ordered separately. A peer's entries are ordered on the hub by their prefixed id (`<peer>/<app>`), so moving them never touches the peer.
+- **Hide.** The ✕ on a tile hides the app on this panel (`PATCH /api/apps/:app { hidden: true }`): its tile, agents and widgets disappear, the app itself keeps running and stays in the workspace. `?all=1` on `GET /api/apps` lists hidden apps, and the same route with `hidden: false` brings one back. For a peer's app the ✕ hides it on the hub only (`PATCH /api/peers/:peer/apps/:app`).
+- **Add.** The "Add" tile takes a link; see the previous section.
+- **Uninstall.** Below the app grid, edit mode shows an uninstall zone. Dropping a tile there opens a confirmation that says what will happen, then sends `DELETE /api/apps/:app` (for a peer's app `DELETE /api/peers/:peer/apps/:app`, which the hub forwards to the peer and then refreshes its snapshot). In order:
+  1. The service is stopped with the operator's stop command (`SPACE_SERVICE_STOP` in the workspace `.env`, `{app}` replaced by the name, e.g. `sudo systemctl disable --now {app}`). A stop that fails aborts the whole uninstall with 502 and the app stays as it was. With no stop command configured the service is left running and the response says `stopped: "unconfigured"`.
+  2. The directory leaves the workspace without losing code: a symlink is unlinked and its target left alone, a checkout under `apps/` is moved to `<workspace>/trash/<name>-<stamp>`, a manifest-only directory is deleted, a directory registered through `SPACE_APPS` is left where it is (`dir.kind` in the response: `unlinked`, `moved`, `deleted`, `kept`).
+  3. The app is forgotten: its manifest tasks become orphaned (run history kept), its agents and widgets leave the panel, its service leaves the list. The data directory `<workspace>/data/<name>/` is kept; the response names it.
+
+  Uninstalling does not touch the app's repository, its systemd unit file, its tunnel hostname or its data. Those are the operator's, and the [app spec](app-spec.md#lifecycle) lists them under retiring an app. Removing the directory by hand and calling `POST /api/apps/sync` has the same effect on the space, minus the stop command; the sync reports such apps under `gone`.
 
 ## Layout and state
 
@@ -77,7 +91,7 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | `GET /api/services` | every app with a `service`: port and health, for the settings pop-over; plus `peers`, one entry per peer machine |
 | `POST /api/apps` | create a manifest-only app from `{ link }` or identity fields |
 | `PATCH /api/apps/:app` | `{ hidden }` |
-| `DELETE /api/apps/:app` | manifest-only apps only |
+| `DELETE /api/apps/:app` | uninstall: stop the service, take the directory out of the workspace, forget the app (see above) |
 | `GET /api/apps/:app/icon`, `GET /api/agents/:app/:agent/avatar` | icon files from the app directory; paths cannot escape it |
 | `GET /api/widgets`, `GET /api/widgets/:app/:name/embed` | widget payloads and embed pages |
 | `GET`/`PUT /api/panel/layout` | order and hidden set |
@@ -85,7 +99,7 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | `GET /api/agents` | every agent the panel lists |
 | `POST /api/agents/:app/:agent/chat` | one chat turn, SSE |
 | `GET /api/agents/:app/:agent/sessions[/:sid]` | recent sessions, restored transcript |
-| `GET /api/peers`, `PATCH /api/peers/:peer/apps/:app`, `/api/peers/:peer/…` | peer machines, hub-side hide, forwarded icon/embed/chat/sessions ([peers.md](peers.md)) |
+| `GET /api/peers`, `PATCH`/`DELETE /api/peers/:peer/apps/:app`, `/api/peers/:peer/…` | peer machines, hub-side hide, forwarded uninstall/icon/embed/chat/sessions ([peers.md](peers.md)) |
 | `/api/peer/…` | this space as a peer of a hub, bearer-guarded ([peers.md](peers.md)) |
 
 ## Trust boundary
@@ -93,7 +107,7 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 These routes carry no bearer token. The browser cannot hold `SPACE_API_TOKEN`, and the panel is reached the way the previous panel was: through the operator's tunnel and access layer from outside, through loopback on the machine. The machine-side routes (tasks, storage, notify) keep the token. Consequences to be aware of:
 
 - Anyone who passes the access layer can open a chat with `bypassPermissions`, which is a shell on the machine with the operator's runtime login. This is the same exposure as before, now written down.
-- Anything on the machine that can reach loopback can create or delete manifest-only apps and change the layout. Command tasks run as the same user anyway.
+- Anything on the machine that can reach loopback can add an app from a link, uninstall an app (which runs the stop command) and change the layout. Command tasks run as the same user anyway.
 
 An operator who wants a second factor puts it in front of the tunnel, not in ai-space.
 
@@ -101,7 +115,7 @@ An operator who wants a second factor puts it in front of the tunnel, not in ai-
 
 ```
 src/space/panel/    registry.ts (registered manifests), layout.ts (panel_kv), health.ts,
-                    widgets.ts (feed + cache), view.ts (API shapes), links.ts (manifest-only apps),
+                    widgets.ts (feed + cache), view.ts (API shapes), links.ts (manifest-only apps), uninstall.ts (stop + directory),
                     api.ts (routes)
 src/space/peers/    other machines' panels merged into this one, and this one served to a hub (peers.md)
 src/space/agents/   runtime.ts (claude process + SSE), sessions.ts (chat_sessions),

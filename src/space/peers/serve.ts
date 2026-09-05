@@ -77,6 +77,7 @@ export function createPeerServeRoutes(opts: PeerServeOptions): Routes {
         });
       }),
     },
+    "/api/peer/apps/:app": { DELETE: guard(mirror(opts.panel, "/api/apps/:app", "DELETE")) },
     "/api/peer/apps/:app/icon": { GET: guard(mirror(opts.panel, "/api/apps/:app/icon", "GET")) },
     "/api/peer/apps/:app/appcolor": {
       GET: guard((req) => {

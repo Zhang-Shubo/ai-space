@@ -51,6 +51,9 @@ SPACE_PORT=8700
 # Bearer token for mutating API routes. Empty = no check (127.0.0.1 only).
 SPACE_API_TOKEN=
 SPACE_MAX_CONCURRENCY=2
+# How the panel stops an app's service when it uninstalls the app; {app} = name.
+# e.g. sudo systemctl disable --now {app}   or   systemctl --user disable --now {app}
+SPACE_SERVICE_STOP=
 `;
 
 /** Create the workspace directories and a starter .env if missing. Safe to call every boot. */

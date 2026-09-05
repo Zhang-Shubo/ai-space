@@ -294,7 +294,7 @@ Commit messages follow Conventional Commits, as in ai-space itself.
 | Validate | `bun run validate [<dir>]` | Parses `space.yaml` against the schema and the semantic rules (unique ports, referenced files exist, placeholders resolvable). Exit code 1 with one line per problem. |
 | Sync | automatic on boot and on `POST /api/apps/sync` | Discovers every `apps/*/space.yaml`, provisions storage, registers tasks, starts services, publishes agents and widgets. Idempotent. |
 | Pause / archive | edit `status:` and sync | Tasks and service stop; storage stays. |
-| Remove | delete the directory and sync | Tasks are marked orphaned, the service stops, agents and widgets disappear. `<workspace>/data/<name>/` is kept until removed by hand. |
+| Remove | drop the app on the panel's uninstall zone, or `DELETE /api/apps/<name>`, or delete the directory and sync | The service is stopped (through the operator's `SPACE_SERVICE_STOP` command; not when removing by hand), the directory leaves `apps/` (a checkout goes to `<workspace>/trash/`, a symlink is unlinked), tasks are marked orphaned, agents and widgets disappear. `<workspace>/data/<name>/` is kept until removed by hand, and so are the repository, the unit file and the hostname: retiring an app for good means also `systemctl disable` of its unit, dropping its tunnel ingress and archiving its repository. See [panel.md](panel.md#arranging-hiding-and-uninstalling-apps). |
 
 Sync rejects an app whose manifest fails validation and keeps the previous good state for that app; other apps are unaffected.
 

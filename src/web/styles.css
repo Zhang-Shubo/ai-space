@@ -412,6 +412,17 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   background: #ef4444; color: #fff; font-size: 12px; line-height: 1; cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
+.dropzone {
+  margin: 18px 4px 4px; padding: 16px 20px; border-radius: 16px;
+  border: 2px dashed rgba(239, 68, 68, 0.55); color: var(--muted); font-size: 13px;
+  display: flex; align-items: center; gap: 12px; transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.dropzone b { color: #ef4444; font-weight: 600; }
+.dropzone-icon { font-size: 22px; line-height: 1; }
+.dropzone.hot { background: rgba(239, 68, 68, 0.12); border-color: #ef4444; color: var(--text); }
+.modal-list { margin: 14px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.modal-list li + li { margin-top: 6px; }
+.btn2.danger { background: #ef4444; color: #fff; border-color: transparent; }
 .tile.add { border: none; background: transparent; padding: 0; font: inherit; color: var(--muted); }
 .tile.add .tile-icon { background: transparent; border-style: dashed; font-size: 26px; }
 
