@@ -9,6 +9,7 @@ import index from "./index.html";
 
 const PUBLIC: Record<string, string> = {
   "/favicon.svg": "favicon.svg",
+  "/settings.svg": "settings.svg",
   "/manifest.webmanifest": "manifest.webmanifest",
   "/apple-touch-icon.png": "apple-touch-icon.png",
   "/icon-512.png": "icon-512.png",

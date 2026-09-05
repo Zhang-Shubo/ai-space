@@ -10,6 +10,7 @@
   --muted: rgba(14, 17, 22, 0.55);
   --glass: rgba(255, 255, 255, 0.55);
   --glass-strong: rgba(255, 255, 255, 0.78);
+  --panel: rgba(255, 255, 255, 0.94);
   --glass-border: rgba(255, 255, 255, 0.65);
   --hairline: rgba(14, 17, 22, 0.08);
   --shadow: 0 8px 32px rgba(31, 38, 135, 0.08);
@@ -24,6 +25,7 @@
   --muted: rgba(235, 235, 245, 0.62);
   --glass: rgba(255, 255, 255, 0.09);
   --glass-strong: rgba(40, 45, 62, 0.88);
+  --panel: rgba(40, 45, 62, 0.97);
   --glass-border: rgba(255, 255, 255, 0.16);
   --hairline: rgba(255, 255, 255, 0.12);
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
@@ -128,7 +130,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .launcher.editing .tile.builtin { animation: none; cursor: default; opacity: 0.6; }
 .panel {
   position: relative; display: flex; flex-direction: column; max-height: 100%;
-  background: var(--glass-strong);
+  background: var(--panel);
   -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow);
   overflow: hidden;
@@ -200,7 +202,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 /* Tasks: the scheduler's task list, grouped by app, with run history per row, in a floating panel. */
 .tasks {
   position: relative; width: min(560px, 94vw); height: min(80vh, 760px); display: flex; flex-direction: column;
-  background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: var(--panel); -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;
 }
@@ -253,7 +255,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 /* Chat: a floating panel in the middle of the page; the agent tabs sit along its left edge. */
 .chat {
   position: relative; width: min(720px, 94vw); height: min(82vh, 800px); display: flex; flex-direction: row;
-  background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: var(--panel); -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;
 }
@@ -429,6 +431,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 }
 /* A mounted panel that is closed (the chat keeps its conversations). */
 .overlay.off { display: none; }
+/* Floating panels sit on a nearly opaque surface (--panel); the glass tokens stay for tiles and pop-overs. */
 /* Panels that belong near the top of the page, such as the settings. */
 .overlay.top { align-items: flex-start; padding-top: clamp(40px, 8vh, 80px); }
 .overlay.top .panel { max-height: calc(100vh - clamp(40px, 8vh, 80px) - 20px); }

@@ -623,7 +623,7 @@ export default function App() {
                   )}
                 </Tile>
               ))}
-              <Tile icon="⚙️" fallback="⚙️" name="Settings" editing={editing} onOpen={openSettings} showPop={!prefs.noPop} className="builtin">
+              <Tile icon="/settings.svg" fallback="⚙️" name="Settings" editing={editing} onOpen={openSettings} showPop={!prefs.noPop} className="builtin">
                 <p className="pop-title">
                   Settings
                   <span className="status">
