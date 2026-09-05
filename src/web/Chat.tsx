@@ -312,11 +312,12 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
                 upd((x) => ({ ...x, status: `Running ${b.name}…`, tools: [...x.tools, { name: b.name || "tool", hint: toolHint(b.input) }] }));
               }
           } else if (ev.type === "user") {
-            // Tool results: a write the headless run was not allowed to make comes back as an error; show it.
+            // Tool results: a call the headless run was not allowed to make comes back as an error; show it.
+            // The CLI words it as "requires approval" for commands and "permission … denied" for edits.
             for (const b of ev.message?.content || []) {
               if (b.type !== "tool_result" || !b.is_error) continue;
               const rtxt = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c: { text?: string }) => c.text || "").join(" ") : "";
-              if (/permission|granted|denied/i.test(rtxt)) {
+              if (/requires approval|permission|granted|denied/i.test(rtxt)) {
                 const name = toolNames.get(b.tool_use_id) || "tool";
                 upd((x) => (x.denied.includes(name) ? x : { ...x, denied: [...x.denied, name] }));
               }
@@ -383,13 +384,14 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
     inputRef.current?.focus();
   };
 
-  // After a refusal: switch to "edit files" and ask the agent to redo the refused step in the same session.
-  const retryWithPerm = () => {
-    const v = "acceptEdits";
+  // After a refusal: raise the tier the refused tool needs (commands need every permission, edits just
+  // "edit files") and ask the agent to redo the refused step in the same session.
+  const retryWithPerm = (denied: string[]) => {
+    const v = denied.includes("Bash") || permRef.current === "acceptEdits" ? "bypassPermissions" : "acceptEdits";
     setPerm(v);
     permRef.current = v;
     localStorage.setItem("chat-perm", v);
-    send("I have granted write access (edit files). Please finish the step that was refused for lack of permission.");
+    send("I have granted more permissions. Please finish the step that was refused for lack of permission.");
   };
 
   const toggleHist = async () => {
@@ -515,8 +517,8 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
               {m.role === "ai" ? <span className={`md ${m.live ? "live" : ""}`} dangerouslySetInnerHTML={{ __html: mdHtml(m.text) }} /> : linkNodes(m.text)}
               {m.role === "ai" && m.denied.length > 0 && (
                 <span className="msg-denied">
-                  ⛔ {m.denied.join(", ")} needed write access and was refused
-                  {!m.live && <button onClick={retryWithPerm}>Grant and retry</button>}
+                  ⛔ {m.denied.join(", ")} was refused for lack of permission
+                  {!m.live && <button onClick={() => retryWithPerm(m.denied)}>Grant and retry</button>}
                 </span>
               )}
               {m.role === "ai" && m.live && m.status && <span className="msg-status">{m.status}</span>}
