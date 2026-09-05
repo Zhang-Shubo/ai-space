@@ -115,6 +115,23 @@ widgets:
     expect(m.widgets[1]).toMatchObject({ kind: "embed", size: "1x1", refreshMs: 60_000 });
   });
 
+  test("parses i18n by language tag and only for declared names", () => {
+    const base = "name: notes\ntitle: Notes\nagents:\n  - name: librarian\nwidgets:\n  - name: recent\n    source: /w\n";
+    const m = parseManifest(`${base}i18n:\n  zh:\n    title: 笔记\n    description: 个人笔记。\n    agents:\n      librarian: { title: 图书管理员, description: 归档笔记。 }\n    widgets:\n      recent: { title: 最近 }\n  zh-Hant:\n    title: 筆記\n`, "/apps/notes");
+    expect(m.i18n).toEqual({
+      zh: { title: "笔记", description: "个人笔记。", agents: { librarian: { title: "图书管理员", description: "归档笔记。" } }, widgets: { recent: { title: "最近" } } },
+      "zh-Hant": { title: "筆記" },
+    });
+    // Empty entries are dropped rather than kept as empty mappings.
+    expect("i18n" in parseManifest(`${base}i18n:\n  zh: {}\n`, "/apps/notes")).toBe(false);
+    expect(() => parseManifest(`${base}i18n: zh\n`, "/d")).toThrow(/i18n must map/);
+    expect(() => parseManifest(`${base}i18n:\n  Chinese: { title: x }\n`, "/d")).toThrow(/not a language tag/);
+    expect(() => parseManifest(`${base}i18n:\n  zh: { name: x }\n`, "/d")).toThrow(/unknown key "name"/);
+    expect(() => parseManifest(`${base}i18n:\n  zh: { title: "" }\n`, "/d")).toThrow(/i18n.zh.title must be/);
+    expect(() => parseManifest(`${base}i18n:\n  zh:\n    agents: { nobody: { title: x } }\n`, "/d")).toThrow(/no agent named "nobody"/);
+    expect(() => parseManifest(`${base}i18n:\n  zh:\n    widgets: { recent: { description: x } }\n`, "/d")).toThrow(/unknown key "description"/);
+  });
+
   test("applies defaults on an empty manifest", () => {
     const m = parseManifest("", "/apps/bare");
     expect(m).toMatchObject({ app: "bare", spec: 1, status: "active", agents: [], widgets: [], tasks: [] });

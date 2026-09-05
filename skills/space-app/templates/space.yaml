@@ -9,6 +9,13 @@ icon: icon.svg                     # path in this repository, an emoji, or an ht
 # url: https://my-app.example.com  # public entry; the panel shows a tile only when this is set
 status: active                     # active | paused | archived
 # repo: https://github.com/<owner>/my-app.git
+# Display text in other languages, by language tag; the panel picks the reader's. Names are never translated.
+# i18n:
+#   zh:
+#     title: 我的应用
+#     description: 一句话说明这个应用做什么。
+#     agents: { assistant: { title: 助手, description: 回答关于这个应用及其数据的问题。 } }
+#     widgets: { latest: { title: 我的应用 · 最新 } }
 
 # The app's own process. ai-space hands over PORT; the process binds 127.0.0.1 only.
 service:

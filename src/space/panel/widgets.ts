@@ -1,5 +1,5 @@
 import type { Manifest, ManifestWidget } from "../scheduler/manifest.ts";
-import { iconUrl, resolveLink } from "./view.ts";
+import { iconUrl, resolveLink, type ViewI18n, widgetI18n } from "./view.ts";
 import type { AppRegistry } from "./registry.ts";
 
 /**
@@ -20,6 +20,7 @@ export type WidgetView = {
   app: string;
   name: string;
   title: string;
+  i18n?: ViewI18n;
   icon: string;
   link: string;
   kind: "items" | "embed";
@@ -54,6 +55,7 @@ export class WidgetFeed {
       app: m.app,
       name: w.name,
       title: w.title ?? m.title ?? m.app,
+      ...widgetI18n(m, w),
       icon: iconUrl(m),
       link: resolveLink(m, w.link),
       kind: w.kind,

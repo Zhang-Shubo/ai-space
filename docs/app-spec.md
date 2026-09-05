@@ -72,6 +72,8 @@ icon: icon.svg                     # path in the repo, an emoji or an http(s) UR
 url: https://my-app.example.com    # public entry; the panel tile opens it
 status: active                     # active (default) | paused | archived
 repo: https://github.com/<owner>/my-app.git   # informative; set by new-app
+i18n:                              # translations of the display text, by language tag (optional)
+  zh: { title: 我的应用, description: 一句话说明这个应用做什么。 }
 ```
 
 | Key | Type | Notes |
@@ -84,8 +86,20 @@ repo: https://github.com/<owner>/my-app.git   # informative; set by new-app
 | `url` | string | Public entry URL; the panel shows a tile only for apps that have one. Widget and agent links are resolved relative to it. |
 | `status` | enum | `paused` keeps the app listed but stops its tasks and service; `archived` hides it and stops everything. Storage is never dropped by a status change. |
 | `repo` | string | The origin URL. |
+| `i18n` | mapping | Translations of `title` and `description`, and by name of the agents' and widgets' text, keyed by language tag (`zh`, `zh-Hant`, `pt-BR`). The panel shows the reader's language when the manifest has it and the plain field otherwise; names are never translated. Only declared agent and widget names may appear. See [i18n](i18n.md). |
 
 Sections: `service`, `agents`, `widgets`, `skills`, `tasks`, `storage`, `notify`. Each is optional.
+
+```yaml
+i18n:
+  zh:
+    title: 笔记
+    description: 个人笔记，带一个归档和检索的 agent。
+    agents:
+      librarian: { title: 图书管理员, description: 归档并查找笔记。 }
+    widgets:
+      recent: { title: 笔记 · 最近 }
+```
 
 ### `service`
 

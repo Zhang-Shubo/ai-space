@@ -17,7 +17,9 @@ export const MANIFEST_FILE = "space.yaml";
 export const SPEC_VERSION = 1;
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
-const TOP_LEVEL_KEYS = ["spec", "name", "title", "description", "icon", "url", "status", "repo", "service", "agents", "widgets", "skills", "tasks", "storage", "notify"];
+const TOP_LEVEL_KEYS = ["spec", "name", "title", "description", "icon", "url", "status", "repo", "i18n", "service", "agents", "widgets", "skills", "tasks", "storage", "notify"];
+/** A language tag as `i18n:` keys use it: a primary tag and optional subtags (`zh`, `zh-Hant`, `pt-BR`). */
+const LANG_TAG_RE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
 export type AppStatus = "active" | "paused" | "archived";
 export type AgentRuntime = "claude" | "codex";
@@ -76,6 +78,18 @@ export type ManifestWidget = {
   refreshMs: number;
 };
 
+/** Translations of the display text of one language; see i18n.md. Names are never translated. */
+export type I18nText = { title?: string; description?: string };
+export type ManifestI18n = Record<
+  string,
+  I18nText & {
+    /** By agent name. */
+    agents?: Record<string, I18nText>;
+    /** By widget name; widgets have no description. */
+    widgets?: Record<string, { title?: string }>;
+  }
+>;
+
 export type Manifest = {
   app: string;
   dir: string;
@@ -89,6 +103,8 @@ export type Manifest = {
   url?: string;
   status: AppStatus;
   repo?: string;
+  /** The `i18n:` section: display text per language, keyed by language tag. */
+  i18n?: ManifestI18n;
   service?: ManifestService;
   agents: ManifestAgent[];
   widgets: ManifestWidget[];
@@ -136,6 +152,7 @@ export function parseManifest(yaml: string, dir: string): Manifest {
   const service = doc.service === undefined ? undefined : parseService(doc.service);
   const agents = parseList(doc.agents, "agents", parseAgent);
   const widgets = parseList(doc.widgets, "widgets", parseWidget);
+  const i18n = doc.i18n === undefined ? undefined : parseI18n(doc.i18n, agents, widgets);
 
   const rawTasks = doc.tasks ?? [];
   if (!Array.isArray(rawTasks)) throw new Error("tasks must be a list");
@@ -158,6 +175,7 @@ export function parseManifest(yaml: string, dir: string): Manifest {
     ...(url !== undefined ? { url } : {}),
     status,
     ...(repo !== undefined ? { repo } : {}),
+    ...(i18n ? { i18n } : {}),
     ...(service ? { service } : {}),
     agents,
     widgets,
@@ -179,6 +197,48 @@ function parseService(raw: unknown): ManifestService {
   if (health !== undefined && !health.startsWith("/")) throw new Error("service.health must be a path starting with /");
   if (raw.env !== undefined && !isStringMap(raw.env)) throw new Error("service.env must map strings to strings");
   return { command: raw.command.trim(), port, ...(health ? { health } : {}), ...(raw.env ? { env: raw.env as Record<string, string> } : {}) };
+}
+
+/**
+ * `i18n:` maps language tags to translations of `title` / `description` and, by name, of the agents'
+ * and widgets' text. Only declared names may be translated, so a rename cannot leave a stale entry.
+ */
+function parseI18n(raw: unknown, agents: ManifestAgent[], widgets: ManifestWidget[]): ManifestI18n | undefined {
+  if (!isRecord(raw)) throw new Error("i18n must map language tags to mappings");
+  const out: ManifestI18n = {};
+  for (const [lang, entry] of Object.entries(raw)) {
+    if (!LANG_TAG_RE.test(lang)) throw new Error(`i18n: "${lang}" is not a language tag (like zh, zh-Hant, pt-BR)`);
+    const ctx = `i18n.${lang}`;
+    if (!isRecord(entry)) throw new Error(`${ctx} must be a mapping`);
+    for (const key of Object.keys(entry)) if (!["title", "description", "agents", "widgets"].includes(key)) throw new Error(`${ctx} has unknown key "${key}"`);
+    const text = parseI18nText(entry, ctx, true);
+    const byName = <T extends { name: string }>(section: "agents" | "widgets", items: T[], withDescription: boolean) => {
+      if (entry[section] === undefined) return undefined;
+      const rawMap = entry[section];
+      if (!isRecord(rawMap)) throw new Error(`${ctx}.${section} must map names to mappings`);
+      const map: Record<string, I18nText> = {};
+      for (const [name, t] of Object.entries(rawMap)) {
+        if (!items.some((it) => it.name === name)) throw new Error(`${ctx}.${section}: no ${section.slice(0, -1)} named "${name}"`);
+        const where = `${ctx}.${section}.${name}`;
+        if (!isRecord(t)) throw new Error(`${where} must be a mapping`);
+        for (const key of Object.keys(t)) if (!(withDescription ? ["title", "description"] : ["title"]).includes(key)) throw new Error(`${where} has unknown key "${key}"`);
+        const parsed = parseI18nText(t, where, withDescription);
+        if (Object.keys(parsed).length) map[name] = parsed;
+      }
+      return Object.keys(map).length ? map : undefined;
+    };
+    const agentsText = byName("agents", agents, true);
+    const widgetsText = byName("widgets", widgets, false);
+    const value = { ...text, ...(agentsText ? { agents: agentsText } : {}), ...(widgetsText ? { widgets: widgetsText } : {}) };
+    if (Object.keys(value).length) out[lang] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function parseI18nText(raw: Record<string, unknown>, ctx: string, withDescription: boolean): I18nText {
+  const title = optionalString(raw.title, `${ctx}.title`);
+  const description = withDescription ? optionalString(raw.description, `${ctx}.description`) : undefined;
+  return { ...(title !== undefined ? { title } : {}), ...(description !== undefined ? { description } : {}) };
 }
 
 function parseList<T extends { name: string }>(raw: unknown, section: string, parse: (item: unknown, where: string) => T): T[] {

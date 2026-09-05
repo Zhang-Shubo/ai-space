@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { parseManifest } from "../scheduler/manifest.ts";
 import { LayoutStore, orderBy } from "./layout.ts";
 import { linkManifest, parseLinkApp } from "./links.ts";
-import { iconUrl, resolveLink } from "./view.ts";
+import { agentView, appView, iconUrl, resolveLink, serviceView } from "./view.ts";
 
 describe("layout", () => {
   test("orderBy puts unknown names after ordered ones, alphabetically", () => {
@@ -48,6 +48,24 @@ describe("view", () => {
     expect(iconUrl({ ...m, icon: "https://x/i.png" })).toBe("https://x/i.png");
     expect(iconUrl({ ...m, icon: undefined })).toBe("📦");
   });
+  test("views carry the manifest's translations next to the plain text, only when there are any", () => {
+    const m = parseManifest(
+      "name: notes\ntitle: Notes\nservice: { command: x, port: 8710 }\nagents:\n  - name: a\n  - name: b\nwidgets:\n  - name: w\n    source: /w\ni18n:\n  zh:\n    title: 笔记\n    agents: { a: { title: 甲 } }\n    widgets: { w: { title: 组件 } }\n",
+      "/apps/notes",
+    );
+    const entry = { manifest: m, manifestOnly: false } as Parameters<typeof appView>[0];
+    const app = appView(entry, { hidden: false });
+    expect(app.title).toBe("Notes");
+    expect(app.i18n).toEqual({ zh: { title: "笔记" } });
+    expect(app.agents[0]?.i18n).toEqual({ zh: { title: "甲" } });
+    expect("i18n" in (app.agents[1] ?? {})).toBe(false);
+    expect(app.widgets[0]?.i18n).toEqual({ zh: { title: "组件" } });
+    expect(serviceView(entry, { hidden: false })?.i18n).toEqual({ zh: { title: "笔记" } });
+    const plain = parseManifest("name: bare\nagents:\n  - name: a\n", "/apps/bare");
+    expect("i18n" in appView({ manifest: plain, manifestOnly: false } as Parameters<typeof appView>[0], { hidden: false })).toBe(false);
+    expect("i18n" in agentView(plain, plain.agents[0]!)).toBe(false);
+  });
+
   test("resolveLink resolves against the app url", () => {
     expect(resolveLink(m, "/#recent")).toBe("https://n.example.com/#recent");
     expect(resolveLink(m, "list")).toBe("https://n.example.com/app/list");
