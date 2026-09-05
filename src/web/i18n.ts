@@ -192,9 +192,9 @@ const zh: Record<Key, string> = {
   "apps.repo": "代码仓库 ↗",
   "apps.empty": "还没有应用。把带 space.yaml 的应用放到 apps/ 下，或长按背景从链接添加一个。",
 
-  "agents.heading": "Agent",
+  "agents.heading": "智能体",
   "agents.clickToChat": "点击开始对话",
-  "agents.empty": "还没有 agent。",
+  "agents.empty": "还没有智能体。",
 
   "widgets.heading": "小组件",
   "widget.empty": "暂无内容",
@@ -203,7 +203,7 @@ const zh: Record<Key, string> = {
   "widget.stale": "{peer} 无响应；显示最后已知状态",
 
   "add.title": "添加应用",
-  "add.sub": "从链接添加，由 agent 解析",
+  "add.sub": "从链接添加，由智能体解析",
   "add.link": "链接 *",
   "add.placeholder": "https://github.com/you/my-app 或 https://tool.example.com",
   "add.hint": "名称、图标和描述从链接读取，写入 apps/ 下一个只有清单的应用。",
@@ -217,7 +217,7 @@ const zh: Record<Key, string> = {
   "uninstall.noService": "它没有需要停止的服务。",
   "uninstall.deleteLink": "删除这条链接记录。",
   "uninstall.moveDir": "它的目录移出工作区：符号链接被移除，检出的代码移到工作区回收站。不删除任何代码。",
-  "uninstall.forget": "它的任务、agent 和小组件从面板消失。数据目录保留。",
+  "uninstall.forget": "它的任务、智能体和小组件从面板消失。数据目录保留。",
   "uninstall.zoneHint": "把应用拖到这里以停止其服务并从空间移除；数据保留",
 
   "settings.title": "设置",
@@ -230,7 +230,7 @@ const zh: Record<Key, string> = {
   "settings.scheduler": "调度器",
   "settings.tasks": "定时任务",
   "settings.peers": "对等节点",
-  "settings.peerCounts": "{apps} 个应用 · {agents} 个 agent · {widgets} 个小组件 · {services} 个服务",
+  "settings.peerCounts": "{apps} 个应用 · {agents} 个智能体 · {widgets} 个小组件 · {services} 个服务",
   "settings.snapshot": "快照 {time}",
   "settings.services": "服务",
   "settings.noServices": "没有登记的服务",

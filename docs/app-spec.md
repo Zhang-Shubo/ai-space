@@ -94,7 +94,7 @@ Sections: `service`, `agents`, `widgets`, `skills`, `tasks`, `storage`, `notify`
 i18n:
   zh:
     title: 笔记
-    description: 个人笔记，带一个归档和检索的 agent。
+    description: 个人笔记，带一个归档和检索的智能体。
     agents:
       librarian: { title: 图书管理员, description: 归档并查找笔记。 }
     widgets:
