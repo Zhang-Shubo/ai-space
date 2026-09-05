@@ -79,7 +79,7 @@ Transcripts are read back from the CLI's own store (`~/.claude/projects/<cwd>/<s
 
 ## Widgets
 
-`GET /api/widgets` fetches every `kind: items` source through ai-space, caches each payload for the widget's `refresh`, and returns at most twenty items with only the contract fields (`text`, `url`, `time`). A failing source yields `{ ok: false, error }` and the card shows the error as is. Sources are resolved server-side: a path is joined to `http://127.0.0.1:<service.port>`, a full URL is used unchanged; neither reaches the browser. `kind: embed` widgets are proxied at `GET /api/widgets/:app/:name/embed?theme=` because the browser cannot reach loopback; the page must be self-contained (inline assets or absolute public URLs).
+`GET /api/widgets` fetches every `kind: items` source through ai-space, caches each payload for the widget's `refresh`, and returns at most twenty items with only the contract fields (`text`, `url`, `time`). A failing source yields `{ ok: false, error }` and the card shows the error as is. Sources are resolved server-side: a path is joined to `http://127.0.0.1:<service.port>`, a full URL is used unchanged; neither reaches the browser. `kind: embed` widgets are proxied at `GET /api/widgets/:app/:name/embed?theme=&lang=` because the browser cannot reach loopback (both parameters are forwarded to the page, `lang` only when it is a language tag); the page must be self-contained (inline assets or absolute public URLs).
 
 ## Health
 

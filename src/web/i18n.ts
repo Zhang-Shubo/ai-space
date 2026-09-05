@@ -368,6 +368,14 @@ export function localized<T extends { title: string; description?: string; i18n?
   return { title: entry?.title ?? x.title, ...(description !== undefined ? { description } : {}) };
 }
 
+/**
+ * An app URL with the `{lang}` placeholder filled (app-spec.md: an app opts in to the panel's language
+ * by putting it in its `url` query). `%7Blang%7D` is the same placeholder after URL normalisation.
+ */
+export function withLang(url: string, lang: Lang): string {
+  return url.replaceAll("{lang}", lang).replaceAll("%7Blang%7D", lang);
+}
+
 export const LangContext = createContext<Lang>("en");
 
 /** The current language and a bound `t`. Components re-render when the provider's value changes. */

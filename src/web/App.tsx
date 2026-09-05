@@ -3,7 +3,7 @@ import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
 import { getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
-import { type Key, LANGS, type Lang, localized, saveLang, useLang } from "./i18n.ts";
+import { type Key, LANGS, type Lang, localized, saveLang, useLang, withLang } from "./i18n.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat window.
@@ -115,7 +115,8 @@ const MAX_ROWS = 2;
 function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: DragProps; theme: string; onResize?: (size: string, commit: boolean) => void }) {
   const { lang, t } = useLang();
   const title = localized(lang, w).title;
-  const embed = `${w.peer ? `/api/peers/${encodeURIComponent(w.peer)}` : "/api"}/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}`;
+  const embed = `${w.peer ? `/api/peers/${encodeURIComponent(w.peer)}` : "/api"}/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}&lang=${lang}`;
+  const link = w.link ? withLang(w.link, lang) : "";
   const tall = w.size.endsWith("x2");
   const card = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState<string | null>(null);
@@ -173,7 +174,7 @@ function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: 
       ) : w.ok ? (
         <div className="widget-list">
           {w.items.slice(0, tall ? 14 : 6).map((it, i) => (
-            <a key={i} href={it.url || w.link} target="_blank" rel="noopener noreferrer">
+            <a key={i} href={it.url || link} target="_blank" rel="noopener noreferrer">
               <span className="wi-text">{it.text}</span>
               {it.time && <span className="wi-time">{relTime(it.time, lang)}</span>}
             </a>
@@ -183,8 +184,8 @@ function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: 
       ) : (
         <p className="widget-err">{t("common.unavailable", { error: w.error })}</p>
       )}
-      {w.link && (
-        <a className="widget-more" href={w.link} target="_blank" rel="noopener noreferrer">
+      {link && (
+        <a className="widget-more" href={link} target="_blank" rel="noopener noreferrer">
           {t("widget.viewAll")}
         </a>
       )}
@@ -613,7 +614,7 @@ export default function App({ onLang }: { onLang: (lang: Lang) => void }) {
                   icon={p.icon}
                   fallback="📦"
                   name={shown.title}
-                  href={p.url}
+                  href={p.url ? withLang(p.url, lang) : undefined}
                   editing={editing}
                   onRemove={() => removeApp(p)}
                   removeTitle={p.manifestOnly ? t("common.delete") : t("common.hide")}

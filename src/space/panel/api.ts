@@ -205,9 +205,14 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
         if (!w) throw new NotFound(`unknown embed widget: ${req.params.app}/${req.params.name}`);
         const url = sourceUrl(m, w);
         if (!url) return error(502, "source is a path but the app declares no service");
-        const theme = new URL(req.url).searchParams.get("theme") === "dark" ? "dark" : "light";
+        // The viewer's theme and language travel to the page as query parameters (app-spec.md); the
+        // language is passed only when it looks like a language tag, so the page sees nothing else.
+        const q = new URL(req.url).searchParams;
+        const theme = q.get("theme") === "dark" ? "dark" : "light";
+        const lang = q.get("lang");
         const target = new URL(url);
         target.searchParams.set("theme", theme);
+        if (lang && /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang)) target.searchParams.set("lang", lang);
         let upstream: Response;
         try {
           upstream = await (opts.fetch ?? fetch)(target, { signal: AbortSignal.timeout(8_000) });

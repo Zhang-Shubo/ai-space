@@ -25,6 +25,7 @@ const fakeFetch = (async (input: string | URL | Request) => {
   if (url.endsWith("/api/widget")) return Response.json({ ok: true, items: [{ text: "First", url: "https://notes.example.com/1", time: "2026-09-04T09:00:00Z", extra: 1 }] });
   if (url.endsWith("/api/broken")) return Response.json({ ok: false, error: "db locked" });
   if (url.endsWith("/board?theme=dark")) return new Response("<html>board dark</html>", { headers: { "content-type": "text/html" } });
+  if (url.endsWith("/board?theme=light&lang=zh")) return new Response("<html>board zh</html>", { headers: { "content-type": "text/html" } });
   return new Response("<html><head><meta name=\"theme-color\" content=\"#123456\"></head></html>", { headers: { "content-type": "text/html" } });
 }) as typeof fetch;
 
@@ -162,6 +163,9 @@ describe("panel api", () => {
     expect(byId["notes/board"]).toMatchObject({ kind: "embed", ok: true });
     const embed = await fetch(`${base}/api/widgets/notes/board/embed?theme=dark`);
     expect(await embed.text()).toBe("<html>board dark</html>");
+    expect(await (await fetch(`${base}/api/widgets/notes/board/embed?lang=zh`)).text()).toBe("<html>board zh</html>");
+    // A language that is not a tag is dropped, so the page gets only theme (and the fake answers its default).
+    expect(await (await fetch(`${base}/api/widgets/notes/board/embed?theme=dark&lang=../x`)).text()).toBe("<html>board dark</html>");
     expect((await call("/api/widgets/notes/recent/embed")).status).toBe(404);
   });
 

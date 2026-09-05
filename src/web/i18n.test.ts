@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fmtDuration, relTime, scheduleText, untilTime } from "./api.ts";
-import { LANGS, MESSAGES, detectLang, localized, translate } from "./i18n.ts";
+import { LANGS, MESSAGES, detectLang, localized, translate, withLang } from "./i18n.ts";
 
 describe("dictionaries", () => {
   test("every language has every key of English and no empty text", () => {
@@ -42,6 +42,14 @@ describe("localized", () => {
     expect(localized("zh", { title: "Notes", i18n: { "zh-Hant": { title: "筆記", description: "個人筆記。" } } })).toEqual({ title: "筆記", description: "個人筆記。" });
     expect(localized("en", app)).toEqual({ title: "Notes", description: "Personal notes." });
     expect(localized("zh", { title: "Plain" })).toEqual({ title: "Plain" });
+  });
+});
+
+describe("withLang", () => {
+  test("fills the placeholder, raw or percent-encoded, and leaves other urls alone", () => {
+    expect(withLang("https://a.example.com/?lang={lang}", "zh")).toBe("https://a.example.com/?lang=zh");
+    expect(withLang("https://a.example.com/%7Blang%7D/", "en")).toBe("https://a.example.com/en/");
+    expect(withLang("https://a.example.com/", "zh")).toBe("https://a.example.com/");
   });
 });
 

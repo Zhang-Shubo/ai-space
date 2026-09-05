@@ -83,7 +83,7 @@ i18n:                              # translations of the display text, by langua
 | `title` | string | Shown on the panel. |
 | `description` | string | One sentence, shown on the panel card and to agents. |
 | `icon` | string | Repository path to an SVG or PNG, a single emoji, or an http(s) URL. |
-| `url` | string | Public entry URL; the panel shows a tile only for apps that have one. Widget and agent links are resolved relative to it. |
+| `url` | string | Public entry URL; the panel shows a tile only for apps that have one. Widget and agent links are resolved relative to it. A `{lang}` placeholder in its query (`https://my-app.example.com/?lang={lang}`) is replaced by the panel's language when the tile is opened; without one the app sees only the browser's language. See [i18n](i18n.md#apps). |
 | `status` | enum | `paused` keeps the app listed but stops its tasks and service; `archived` hides it and stops everything. Storage is never dropped by a status change. |
 | `repo` | string | The origin URL. |
 | `i18n` | mapping | Translations of `title` and `description`, and by name of the agents' and widgets' text, keyed by language tag (`zh`, `zh-Hant`, `pt-BR`). The panel shows the reader's language when the manifest has it and the plain field otherwise; names are never translated. Only declared agent and widget names may appear. See [i18n](i18n.md). |
@@ -182,7 +182,7 @@ Contract for `kind: items`. `GET <source>` returns:
 
 `text` is required; `url` and `time` (ISO 8601) are optional and the panel renders relative time. On failure the app returns `{ "ok": false, "error": "…" }` and the panel shows the error as is. The panel fetches through ai-space (`/api/widgets`), caches for `refresh`, and only ever calls URLs that a manifest declares, so `source` may be a loopback address and is never sent to the browser. A path `source` needs a `service` to attach to; an app without one gives a full URL.
 
-Contract for `kind: embed`. `source` is a page the app serves; the panel loads it in a sandboxed iframe of the declared size, in the viewer's theme (the page receives `?theme=light|dark`). ai-space proxies the page (`/api/widgets/:app/:name/embed`), so it must be self-contained: inline styles and scripts, or absolute public URLs. It must work without cookies and without a public origin.
+Contract for `kind: embed`. `source` is a page the app serves; the panel loads it in a sandboxed iframe of the declared size, in the viewer's theme and language (the page receives `?theme=light|dark&lang=<tag>`, `lang` being the panel's language such as `en` or `zh`; a page may ignore it). ai-space proxies the page (`/api/widgets/:app/:name/embed`), so it must be self-contained: inline styles and scripts, or absolute public URLs. It must work without cookies and without a public origin.
 
 ### `skills`
 
