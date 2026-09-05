@@ -1,6 +1,7 @@
 /* Launcher-style panel, glassmorphism: translucent glass (rgba + blur + saturate), hairline
    borders, soft shadows, low-saturation aurora blobs behind. Details show in a glass pop-over
-   on hover; the chat is a right-hand drawer; edit mode jiggles tiles like a phone home screen.
+   on hover; the settings, chat and tasks are floating panels over a dimmed page; edit mode jiggles
+   tiles like a phone home screen.
    Ported from the awesome-agent panel. */
 
 :root {
@@ -121,28 +122,19 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 }
 .empty code { font-size: 13px; }
 
-.fab {
-  position: fixed; z-index: 30;
-  width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--glass-border);
-  background: var(--glass); -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%); box-shadow: var(--shadow);
-  font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-  color: var(--text);
-}
-.chat-btn { right: 24px; top: 24px; }
-.set-btn { left: 24px; top: 24px; }
-
-/* Settings: a drawer from the left edge, scrolling on its own; the same shell as the chat and tasks drawers. */
-.setpop {
-  position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
-  width: min(320px, 94vw); display: flex; flex-direction: column;
+/* Settings: a floating panel near the top of the page, scrolling on its own; the same shell as the
+   chat and tasks panels. Its tile is the last one in the Apps grid and is not editable. */
+.tile.builtin .tile-icon { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.launcher.editing .tile.builtin { animation: none; cursor: default; opacity: 0.6; }
+.panel {
+  position: relative; display: flex; flex-direction: column; max-height: 100%;
   background: var(--glass-strong);
   -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
-  border-right: 1px solid var(--glass-border); box-shadow: var(--shadow);
-  transform: translateX(-105%); transition: transform 0.28s ease;
+  border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow);
+  overflow: hidden;
 }
-.setpop.open { transform: none; }
-.sethead-bar {
+.panel.settings { width: min(360px, 94vw); }
+.panel-head {
   flex: none; display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--glass-border); font-size: 15px;
 }
@@ -205,16 +197,13 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .setlink { width: 100%; border: none; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; }
 .setlink span { color: var(--muted); font-size: 16px; line-height: 1; }
 
-/* Tasks drawer: the scheduler's task list, grouped by app, with run history per row. */
+/* Tasks: the scheduler's task list, grouped by app, with run history per row, in a floating panel. */
 .tasks {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 40;
-  width: min(480px, 94vw); display: flex; flex-direction: column;
+  position: relative; width: min(560px, 94vw); height: min(80vh, 760px); display: flex; flex-direction: column;
   background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border-left: 1px solid var(--glass-border); box-shadow: var(--shadow);
-  transform: translateX(105%); transition: transform 0.28s ease;
+  border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;
 }
-.tasks.open { transform: none; }
 .task-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--glass-border); }
 .task-head b { font-size: 15px; }
 .task-body { flex: 1; overflow-y: auto; padding: 10px 10px 24px; }
@@ -261,15 +250,13 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 }
 :root[data-theme="dark"] .run-out { background: rgba(0, 0, 0, 0.3); }
 
+/* Chat: a floating panel in the middle of the page; the agent tabs sit along its left edge. */
 .chat {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 40;
-  width: min(400px, 94vw); display: flex; flex-direction: row;
+  position: relative; width: min(720px, 94vw); height: min(82vh, 800px); display: flex; flex-direction: row;
   background: var(--glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border-left: 1px solid var(--glass-border); box-shadow: var(--shadow);
-  transform: translateX(105%); transition: transform 0.28s ease;
+  border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;
 }
-.chat.open { transform: none; }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 .chat-tabs {
@@ -438,7 +425,17 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.3);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: fadeIn 0.18s ease;
 }
+/* A mounted panel that is closed (the chat keeps its conversations). */
+.overlay.off { display: none; }
+/* Panels that belong near the top of the page, such as the settings. */
+.overlay.top { align-items: flex-start; padding-top: clamp(40px, 8vh, 80px); }
+.overlay.top .panel { max-height: calc(100vh - clamp(40px, 8vh, 80px) - 20px); }
+.overlay > .panel, .overlay > .chat, .overlay > .tasks, .overlay > .modal { animation: rise 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px) scale(0.985); } }
+@media (prefers-reduced-motion: reduce) { .overlay, .overlay > * { animation: none; } }
 .modal {
   width: min(440px, 94vw); max-height: 90vh; overflow-y: auto;
   background: var(--glass-strong);
@@ -478,16 +475,12 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   section + section { margin-top: 40px; }
   .launcher { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 22px 10px; }
 
-  
-  .set-btn { left: 20px; top: auto; bottom: calc(20px + env(safe-area-inset-bottom)); }
-  .chat-btn { right: 20px; top: auto; bottom: calc(20px + env(safe-area-inset-bottom)); }
-  .setpop { width: 100%; border-right: none; }
-
-  
   .pop { display: none; }
 
-  
-  .chat, .tasks { width: 100%; border-left: none; }
+  /* Panels take the whole screen on a phone. */
+  .overlay, .overlay.top { padding: 0; }
+  .panel.settings, .chat, .tasks { width: 100%; height: 100%; max-height: none; border-radius: 0; border: none; }
+  .overlay.top .panel { max-height: none; }
   .task-body { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   .chat-input { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .chat-down { bottom: calc(84px + env(safe-area-inset-bottom)); }

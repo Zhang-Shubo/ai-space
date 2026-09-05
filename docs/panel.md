@@ -19,12 +19,13 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 | Section | Source | Notes |
 | --- | --- | --- |
 | Apps | every registered manifest that has a `url`, with `status` other than `archived`, minus the hidden set | Tile: `icon` and `title`, nothing else on the icon. Click opens `url`. Hover shows the description, the status (health when the app declares `service.health`) and the repository. |
-| Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title, with the owning app's icon in the corner when it differs from the avatar; click opens the chat drawer on that agent. |
+| Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title, with the owning app's icon in the corner when it differs from the avatar; click opens the chat in a floating panel over the page, on that agent. |
 | Widgets | `widgets:` of every visible app | `items` cards render the list in the house style; `embed` cards load the app's page in a sandboxed iframe through ai-space. |
+| Settings | built in | The last tile of the Apps grid, not hidden, reordered or uninstalled. It opens a floating panel near the top of the page with the browser preferences (hover details, desk pet, widgets, dark mode), the scheduled tasks, the peers and the services. |
 
-| Services (in the settings pop-over) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. |
-| Desk pet (in the settings pop-over) | the browser's preferences | A sprite walking along the bottom edge. Off by a switch; any pet from [petdex.dev](https://petdex.dev) by name: the name is looked up in petdex's public manifest, the sheet URL is kept in `localStorage` with the other preferences, and the bundled capybara stands in when the sheet no longer loads. Pets are user-submitted fan art; the browser talks to petdex directly and sends no Referer, which its hotlink protection rejects. |
-| Tasks (a drawer opened from the settings pop-over) | every task the scheduler knows, grouped by app | One row per task: status dot, name, effective schedule, last outcome and duration, next run, target kind; `api` and `override` badges; disabled and orphaned tasks muted. A row expands to the last twenty runs with error text and captured output. Read-only: it uses the scheduler's `GET /api/tasks` and `GET /api/tasks/:id/runs`, which carry no token; running or toggling a task still goes through the token-guarded routes from the machine. |
+| Services (in Settings) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. |
+| Desk pet (in Settings) | the browser's preferences | A sprite walking along the bottom edge. Off by a switch; any pet from [petdex.dev](https://petdex.dev) by name: the name is looked up in petdex's public manifest, the sheet URL is kept in `localStorage` with the other preferences, and the bundled capybara stands in when the sheet no longer loads. Pets are user-submitted fan art; the browser talks to petdex directly and sends no Referer, which its hotlink protection rejects. |
+| Tasks (a floating panel opened from Settings) | every task the scheduler knows, grouped by app | One row per task: status dot, name, effective schedule, last outcome and duration, next run, target kind; `api` and `override` badges; disabled and orphaned tasks muted. A row expands to the last twenty runs with error text and captured output. Read-only: it uses the scheduler's `GET /api/tasks` and `GET /api/tasks/:id/runs`, which carry no token; running or toggling a task still goes through the token-guarded routes from the machine. |
 
 Two independent axes decide where an app appears. A `url` means a person can open it: that is a tile. A `service` means a process runs: that is a row under Services. An app with both (a web app) has both; a data or background service with no page has a row and no tile, and stays registered, scheduled and probed, its agents and widgets (if any) in their own sections; a link app has a tile and no row; an app with neither (a repository that only runs tasks) appears in neither, and is still listed by `GET /api/apps?all=1`.
 
@@ -89,7 +90,7 @@ Service supervision is not implemented yet, so the panel probes `GET 127.0.0.1:<
 | --- | --- |
 | `GET /` and the PWA files | the web UI |
 | `GET /api/apps`, `GET /api/apps/:app` | app views (`?all=1` lists every app, including hidden ones and those without a url) |
-| `GET /api/services` | every app with a `service`: port and health, for the settings pop-over; plus `peers`, one entry per peer machine |
+| `GET /api/services` | every app with a `service`: port and health, for Settings; plus `peers`, one entry per peer machine |
 | `POST /api/apps` | create a manifest-only app from `{ link }` or identity fields |
 | `PATCH /api/apps/:app` | `{ hidden }` |
 | `DELETE /api/apps/:app` | uninstall: stop the service, take the directory out of the workspace, forget the app (see above) |

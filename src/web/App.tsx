@@ -5,7 +5,9 @@ import Tasks from "./Tasks.tsx";
 import { getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
-// Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
+// Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat window.
+// Settings is a built-in tile at the end of the Apps grid; it, the chat and the tasks list open as
+// floating panels over the page (an overlay that closes on a click outside).
 // Edit mode (long-press the background): add an app from a link, hide or delete, drag to reorder.
 // Everything comes from the apps' manifests through the panel API; the browser holds no secrets.
 // Entries from peer machines say where they run in their hover details and are muted while that peer is down.
@@ -34,6 +36,7 @@ function Tile({
   dragProps,
   stale,
   corner,
+  className,
   children,
 }: {
   icon: string;
@@ -50,9 +53,10 @@ function Tile({
   stale?: boolean;
   /** A small icon over the icon's bottom-right corner: the app an agent belongs to. */
   corner?: string;
+  className?: string;
   children?: ReactNode;
 }) {
-  // onOpen wins over href: agent tiles open the chat drawer; links move into the pop-over.
+  // onOpen wins over href: agent tiles open the chat window; links move into the pop-over.
   const asLink = !!href && !editing && !onOpen;
   // Hide the pop-over once the tile is clicked (a pure :hover would keep it while the pointer rests there).
   const [popHidden, setPopHidden] = useState(false);
@@ -84,7 +88,7 @@ function Tile({
     </>
   );
   const common = {
-    className: `tile${stale ? " stale" : ""}`,
+    className: `tile${stale ? " stale" : ""}${className ? ` ${className}` : ""}`,
     ...(dragProps as object),
     onMouseLeave: () => setPopHidden(false),
     onClick: () => {
@@ -325,7 +329,7 @@ function PetField({ pet, onChange }: { pet: PetChoice | undefined; onChange: (p:
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           }}
         />
-        {/* Always in the DOM: the pop-over's outside-click check runs after React would have removed it. */}
+        {/* Always in the DOM so the row keeps its width; hidden until there is something to clear. */}
         <button
           type="button"
           title="Back to the default pet"
@@ -363,7 +367,7 @@ export default function App() {
   const [uninstalling, setUninstalling] = useState<AppInfo | null>(null);
   const [zoneHot, setZoneHot] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  // The tasks drawer shares the right edge with the chat; opening one closes the other.
+  // One floating panel at a time: opening the settings, the chat or the tasks closes the others.
   const [tasksOpen, setTasksOpen] = useState(false);
   // The chat opens on the space agent by default; an agent tile switches to that agent.
   const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", avatar: "✨", appIcon: "✨", runtime: "claude" });
@@ -376,7 +380,7 @@ export default function App() {
   });
   const [setsOpen, setSetsOpen] = useState(false);
   // Services: every app that runs a process, with or without a page, plus the peer machines whose
-  // panels this one merges. Loaded each time the pop-over opens so the health dots are fresh (the
+  // panels this one merges. Loaded each time the settings open so the health dots are fresh (the
   // server caches probes for 15 s and peer snapshots for their refresh period).
   const [services, setServices] = useState<{ services: ServiceInfo[]; peers: PeerInfo[] } | null>(null);
   useEffect(() => {
@@ -407,12 +411,21 @@ export default function App() {
   };
   useEffect(() => {
     if (!setsOpen) return;
-    const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest(".setpop, .set-btn")) setSetsOpen(false);
-    };
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSetsOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [setsOpen]);
+  const openSettings = () => {
+    setChatOpen(false);
+    setTasksOpen(false);
+    setSetsOpen(true);
+  };
+  const openChat = (a: AgentInfo) => {
+    setChatAgent(a);
+    setSetsOpen(false);
+    setTasksOpen(false);
+    setChatOpen(true);
+  };
 
   const reload = () =>
     Promise.all([getJson<{ apps: AppInfo[] }>("/api/apps"), getJson<{ agents: AgentInfo[] }>("/api/agents")])
@@ -450,18 +463,6 @@ export default function App() {
     localStorage.setItem("panel-theme", theme);
   }, [theme]);
 
-  // Clicking outside the chat drawer closes it.
-  useEffect(() => {
-    if (!chatOpen) return;
-    const h = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      if ((e.target as Element).closest(".chat, .fab, .tile, .modal, .overlay, .pop, .setpop, .pet, .widget, a, button, input, select, textarea")) return;
-      setChatOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [chatOpen]);
-
   // Long-press (550 ms, under 8 px of movement) on the background enters edit mode; a click on the
   // background leaves it. The listeners mount once and read `editing` through a ref: remounting on
   // every change would reset the `fired` flag and mistake the long-press release for an exit click.
@@ -470,7 +471,7 @@ export default function App() {
     editingRef.current = editing;
   }, [editing]);
   useEffect(() => {
-    const blank = (e: MouseEvent) => e.button === 0 && !(e.target as Element).closest(".tile, .fab, .modal, .overlay, .pop, .empty, .pet, .chat, .setpop, .widget, a, button, input, select, textarea");
+    const blank = (e: MouseEvent) => e.button === 0 && !(e.target as Element).closest(".tile, .modal, .overlay, .pop, .empty, .pet, .widget, a, button, input, select, textarea");
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sx = 0;
     let sy = 0;
@@ -589,8 +590,7 @@ export default function App() {
       <div className="shell">
         <section>
           <h2>Apps</h2>
-          {apps.length || editing ? (
-            <div className={`launcher ${editing ? "editing" : ""}`}>
+          <div className={`launcher ${editing ? "editing" : ""}`}>
               {apps.map((p, i) => (
                 <Tile
                   key={p.id}
@@ -623,16 +623,24 @@ export default function App() {
                   )}
                 </Tile>
               ))}
+              <Tile icon="⚙️" fallback="⚙️" name="Settings" editing={editing} onOpen={openSettings} showPop={!prefs.noPop} className="builtin">
+                <p className="pop-title">
+                  Settings
+                  <span className="status">
+                    <i />
+                    built in
+                  </span>
+                </p>
+                <p className="pop-body">Preferences, scheduled tasks, peers and services of this space.</p>
+              </Tile>
               {editing && (
                 <button className="tile add" onClick={() => setAdding(true)}>
                   <span className="tile-icon">＋</span>
                   <span className="tile-name">Add</span>
                 </button>
               )}
-            </div>
-          ) : (
-            empty("No apps yet. Put an app with a space.yaml under apps/, or long-press the background to add one from a link.")
-          )}
+          </div>
+          {!apps.length && empty("No apps yet. Put an app with a space.yaml under apps/, or long-press the background to add one from a link.")}
           {editing && (
             <div
               className={`dropzone${zoneHot ? " hot" : ""}`}
@@ -674,11 +682,7 @@ export default function App() {
                   fallback="🦾"
                   name={a.title}
                   editing={editing}
-                  onOpen={() => {
-                    setChatAgent(a);
-                    setTasksOpen(false);
-                    setChatOpen(true);
-                  }}
+                  onOpen={() => openChat(a)}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("agents", setAgents, i)}
                   corner={a.app !== "space" && a.appIcon !== a.avatar ? a.appIcon : undefined}
@@ -731,108 +735,93 @@ export default function App() {
           }}
         />
       )}
-      <button className="fab set-btn" title="Settings" onClick={() => setSetsOpen((v) => !v)}>
-        ⚙️
-      </button>
-      <div className={`setpop${setsOpen ? " open" : ""}`} aria-hidden={!setsOpen}>
-        <div className="sethead-bar">
-          <b>Settings</b>
-          <button className="chat-hbtn" title="Close" onClick={() => setSetsOpen(false)}>
-            ✕
-          </button>
+      {setsOpen && (
+        <div className="overlay top" onClick={() => setSetsOpen(false)}>
+          <div className="panel settings" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head">
+              <b>Settings</b>
+              <button className="chat-hbtn" title="Close" onClick={() => setSetsOpen(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="setbody">
+              <label className="setrow">
+                Hover details
+                <input type="checkbox" role="switch" checked={!prefs.noPop} onChange={() => togglePref("noPop")} />
+              </label>
+              <label className="setrow">
+                Desk pet
+                <input type="checkbox" role="switch" checked={!prefs.noPet} onChange={() => togglePref("noPet")} />
+              </label>
+              {!prefs.noPet && <PetField pet={prefs.pet} onChange={setPet} />}
+              <label className="setrow">
+                Widgets
+                <input type="checkbox" role="switch" checked={!prefs.noWidget} onChange={() => togglePref("noWidget")} />
+              </label>
+              <label className="setrow">
+                Dark mode
+                <input type="checkbox" role="switch" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
+              </label>
+              <p className="sethead">Scheduler</p>
+              <button
+                className="setrow setlink"
+                onClick={() => {
+                  setSetsOpen(false);
+                  setChatOpen(false);
+                  setTasksOpen(true);
+                }}
+              >
+                Scheduled tasks
+                <span>›</span>
+              </button>
+              {services && services.peers.length > 0 && (
+                <>
+                  <p className="sethead">Peers</p>
+                  {services.peers.map((p) => (
+                    <div key={p.name} className="svcrow" title={`${p.url}\n${p.apps} apps · ${p.agents} agents · ${p.widgets} widgets · ${p.services} services${p.asOf ? `\nsnapshot ${relTime(p.asOf)}` : ""}${p.error ? `\n${p.error}` : ""}`}>
+                      <span className="svc-ico">🛰</span>
+                      <span className="svc-name">{p.name}</span>
+                      {p.health !== "ok" && p.asOf && <span className="svc-port">{relTime(p.asOf)}</span>}
+                      <span className={`status ${p.health}`}>
+                        <i />
+                        {HEALTH[p.health]}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <p className="sethead">Services</p>
+              {services === null ? (
+                <p className="setnote">Loading…</p>
+              ) : services.services.length ? (
+                services.services.map((s) => (
+                  <div key={`${s.peer ?? ""}/${s.app}`} className="svcrow" title={`${s.peer ? `${s.peer}/` : ""}${s.app} · 127.0.0.1:${s.port}${s.hidden ? " · hidden" : ""}`}>
+                    <span className="svc-ico">
+                      <Icon icon={s.icon} fallback="📦" />
+                    </span>
+                    <span className="svc-name">{s.title}</span>
+                    {s.peer && <span className="svc-peer">{s.peer}</span>}
+                    <span className="svc-port">:{s.port}</span>
+                    <span className={`status ${s.status === "active" ? s.health : s.status}`}>
+                      <i />
+                      {s.status === "active" ? HEALTH[s.health] || "?" : STATUS[s.status]}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="setnote">No services registered</p>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="setbody">
-          <label className="setrow">
-            Hover details
-            <input type="checkbox" role="switch" checked={!prefs.noPop} onChange={() => togglePref("noPop")} />
-          </label>
-          <label className="setrow">
-            Desk pet
-            <input type="checkbox" role="switch" checked={!prefs.noPet} onChange={() => togglePref("noPet")} />
-          </label>
-          {!prefs.noPet && <PetField pet={prefs.pet} onChange={setPet} />}
-          <label className="setrow">
-            Widgets
-            <input type="checkbox" role="switch" checked={!prefs.noWidget} onChange={() => togglePref("noWidget")} />
-          </label>
-          <label className="setrow">
-            Dark mode
-            <input type="checkbox" role="switch" checked={theme === "dark"} onChange={() => setTheme(theme === "dark" ? "light" : "dark")} />
-          </label>
-          <p className="sethead">Scheduler</p>
-          <button
-            className="setrow setlink"
-            onClick={() => {
-              setSetsOpen(false);
-              setChatOpen(false);
-              setTasksOpen(true);
-            }}
-          >
-            Scheduled tasks
-            <span>›</span>
-          </button>
-          {services && services.peers.length > 0 && (
-            <>
-              <p className="sethead">Peers</p>
-              {services.peers.map((p) => (
-                <div key={p.name} className="svcrow" title={`${p.url}\n${p.apps} apps · ${p.agents} agents · ${p.widgets} widgets · ${p.services} services${p.asOf ? `\nsnapshot ${relTime(p.asOf)}` : ""}${p.error ? `\n${p.error}` : ""}`}>
-                  <span className="svc-ico">🛰</span>
-                  <span className="svc-name">{p.name}</span>
-                  {p.health !== "ok" && p.asOf && <span className="svc-port">{relTime(p.asOf)}</span>}
-                  <span className={`status ${p.health}`}>
-                    <i />
-                    {HEALTH[p.health]}
-                  </span>
-                </div>
-              ))}
-            </>
-          )}
-          <p className="sethead">Services</p>
-          {services === null ? (
-            <p className="setnote">Loading…</p>
-          ) : services.services.length ? (
-            services.services.map((s) => (
-              <div key={`${s.peer ?? ""}/${s.app}`} className="svcrow" title={`${s.peer ? `${s.peer}/` : ""}${s.app} · 127.0.0.1:${s.port}${s.hidden ? " · hidden" : ""}`}>
-                <span className="svc-ico">
-                  <Icon icon={s.icon} fallback="📦" />
-                </span>
-                <span className="svc-name">{s.title}</span>
-                {s.peer && <span className="svc-peer">{s.peer}</span>}
-                <span className="svc-port">:{s.port}</span>
-                <span className={`status ${s.status === "active" ? s.health : s.status}`}>
-                  <i />
-                  {s.status === "active" ? HEALTH[s.health] || "?" : STATUS[s.status]}
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="setnote">No services registered</p>
-          )}
-        </div>
-      </div>
+      )}
       <Tasks open={tasksOpen} onClose={() => setTasksOpen(false)} />
       <Chat
         open={chatOpen}
         agent={chatAgent}
         onClose={() => setChatOpen(false)}
-        onSwitch={(a) => {
-          setChatAgent(a);
-          setTasksOpen(false);
-          setChatOpen(true);
-        }}
+        onSwitch={openChat}
       />
-      <button
-        className="fab chat-btn"
-        title="Chat"
-        onClick={() => {
-          if (chatOpen) return setChatOpen(false);
-          setChatAgent(agents.find((a) => a.id === "space/assistant") || chatAgent);
-          setTasksOpen(false);
-          setChatOpen(true);
-        }}
-      >
-        ✨
-      </button>
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { agentBase, type AgentInfo, type ChatSession, getJson, isImgIcon, relTime } from "./api.ts";
 
-// Chat drawer. The server streams the runtime's stream-json events over SSE.
+// Chat window (a floating panel). The server streams the runtime's stream-json events over SSE.
 // - Mounted permanently (closing only slides it away) so conversations and session ids survive.
 // - Conversations are keyed by agent id and run in parallel: each has its own queue and in-flight turn;
 //   the bookmark bar on the left switches between them, a busy one shows a pulsing dot.
@@ -424,7 +424,9 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
   const tabs = Object.entries(convs);
 
   return (
-    <aside className={`chat ${open ? "open" : ""}`}>
+    // Always mounted so conversations survive closing; the overlay is hidden, not removed.
+    <div className={`overlay${open ? "" : " off"}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <aside className="chat" role="dialog" aria-label={agent.title}>
       {tabs.length > 1 && (
         <div className="chat-tabs">
           {tabs.map(([k, v]) => (
@@ -549,6 +551,7 @@ export default function Chat({ open, agent, onClose, onSwitch }: { open: boolean
           </button>
         </div>
       </div>
-    </aside>
+      </aside>
+    </div>
   );
 }

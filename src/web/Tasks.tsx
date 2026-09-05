@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { type AppInfo, type RunInfo, type TaskInfo, fmtDuration, getJson, isImgIcon, relTime, scheduleText, untilTime } from "./api.ts";
 
-// Tasks drawer: a read-only view of the scheduler, grouped by app.
+// Tasks window (a floating panel): a read-only view of the scheduler, grouped by app.
 // - Reads `GET /api/tasks` when opened and every 30 s while open; the list is small (tens of tasks).
 // - A row shows the effective schedule, the next run, the last outcome; clicking it loads run history.
 // - App titles and icons come from `GET /api/apps?all=1` so headless and hidden apps still get a name.
@@ -150,7 +150,8 @@ export default function Tasks({ open, onClose }: { open: boolean; onClose: () =>
   const failing = tasks?.filter((t) => t.enabled && !t.orphaned && t.state.lastStatus === "error").length ?? 0;
 
   return (
-    <div className={`tasks ${open ? "open" : ""}`} aria-hidden={!open}>
+    <div className={`overlay${open ? "" : " off"}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="tasks" role="dialog" aria-label="Tasks">
       <div className="task-head">
         <b>Tasks</b>
         <span className="chat-sub">
@@ -178,6 +179,7 @@ export default function Tasks({ open, onClose }: { open: boolean; onClose: () =>
             ))}
           </section>
         ))}
+      </div>
       </div>
     </div>
   );
