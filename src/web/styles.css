@@ -67,14 +67,8 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .tile:focus, .tile:focus-visible { outline: none; }
 .tile:focus-visible .tile-icon { box-shadow: 0 0 0 3px var(--accent, #8b5cf6); }
 .tile-icon img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
-/* The peer an entry comes from, pinned to the icon's corner; muted tiles are a peer's last known state. */
-.tile-badge {
-  position: absolute; top: -6px; left: calc(50% + 14px);
-  padding: 2px 6px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
-  background: var(--accent, #8b5cf6); color: #fff; box-shadow: var(--shadow); pointer-events: none;
-}
+/* Muted tiles are a peer's last known state; the hover details say which peer. */
 .tile.stale .tile-icon, .tile.stale .tile-name { opacity: 0.45; filter: grayscale(0.6); }
-.tile.stale .tile-badge { background: var(--muted); }
 .widget.stale { opacity: 0.55; }
 .widget-peer, .svc-peer {
   flex: none; margin-left: 6px; padding: 1px 5px; border-radius: 999px; font-size: 10px; font-weight: 600;

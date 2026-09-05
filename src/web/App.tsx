@@ -8,7 +8,7 @@ import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } f
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
 // Edit mode (long-press the background): add an app from a link, hide or delete, drag to reorder.
 // Everything comes from the apps' manifests through the panel API; the browser holds no secrets.
-// Entries from peer machines carry a badge with the peer name and are muted while that peer is down.
+// Entries from peer machines say where they run in their hover details and are muted while that peer is down.
 
 const STATUS: Record<string, string> = { active: "active", paused: "paused", archived: "archived" };
 const HEALTH: Record<string, string> = { ok: "up", down: "down", unknown: "" };
@@ -32,7 +32,6 @@ function Tile({
   onOpen,
   showPop = true,
   dragProps,
-  badge,
   stale,
   children,
 }: {
@@ -46,8 +45,6 @@ function Tile({
   onOpen?: () => void;
   showPop?: boolean;
   dragProps?: DragProps;
-  /** The peer the entry comes from, shown in the icon's corner. */
-  badge?: string;
   /** The peer is not answering: the entry is its last known state. */
   stale?: boolean;
   children?: ReactNode;
@@ -74,7 +71,6 @@ function Tile({
       <span className={`tile-icon ${isImgIcon(icon) ? "" : "solid"}`}>
         <Icon icon={icon} fallback={fallback} />
       </span>
-      {badge && <span className="tile-badge">{badge}</span>}
       <span className="tile-name">{name}</span>
       {!editing && !popHidden && showPop && <div className="pop">{children}</div>}
     </>
@@ -486,7 +482,6 @@ export default function App() {
                   removeTitle={p.manifestOnly ? "Delete" : "Hide"}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("apps", setApps, i)}
-                  badge={p.peer}
                   stale={p.stale}
                 >
                   <p className="pop-title">
@@ -536,7 +531,6 @@ export default function App() {
                   }}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("agents", setAgents, i)}
-                  badge={a.peer}
                 >
                   <p className="pop-title">
                     {a.title}
@@ -545,6 +539,7 @@ export default function App() {
                       {a.app === "space" ? "base" : a.id}
                     </span>
                   </p>
+                  {a.peer && <p className="pop-hint">On {a.peer}</p>}
                   {a.description && <p className="pop-body">{a.description}</p>}
                   <p className="pop-hint">Click to chat</p>
                 </Tile>

@@ -31,7 +31,7 @@ Rules that follow from the existing design and stay true:
 
 Names are per machine, so `media` on one machine and `media` on another are different apps. On the hub, a peer app is addressed by `<peer>/<app>`, an agent by `<peer>/<app>/<agent>`, a widget by `<peer>/<app>/<widget>`. Local apps keep their bare names; `<peer>` is a reserved first segment. Peer names follow the app-name rule (`[a-z0-9][a-z0-9._-]*`) and may not equal a local app name; the hub refuses to boot on a collision, since a tile called `david` would then be ambiguous.
 
-The prefix is a display and layout key, not a route parameter: app names cannot contain `/` and the panel routes are shaped `/api/apps/:app`, so peer routes get their own prefix (below) and views carry a `peer` field next to the bare `name`. Every app view now has an `id` (the name, or `<peer>/<name>`), which is what the layout order and the hidden set hold. The web UI renders the peer as a small badge on the tile and uses `peer` to pick the route base.
+The prefix is a display and layout key, not a route parameter: app names cannot contain `/` and the panel routes are shaped `/api/apps/:app`, so peer routes get their own prefix (below) and views carry a `peer` field next to the bare `name`. Every app view now has an `id` (the name, or `<peer>/<name>`), which is what the layout order and the hidden set hold. The web UI names the peer in the tile's hover card and uses `peer` to pick the route base.
 
 ## Configuration
 
@@ -123,8 +123,8 @@ Chat forwarding passes the request body through unchanged, so the hub's access l
 
 ## Web UI
 
-- Tile: a badge with the peer name at the icon's corner; stale tiles muted, the hover card says the peer is not answering.
-- Agents list: peer agents after local ones, same badge.
+- Tile: looks like a local one; the hover card says "On <peer>", and while the peer is down the tile is muted and the card says so.
+- Agents list: peer agents after local ones, same hover-card line.
 - Widgets: a peer chip in the card head; muted while stale.
 - Settings: a Peers section above Services when at least one peer is configured, one row per peer (name, health, snapshot age when down; the tooltip has the URL, counts and the error), then the Services rows with a peer chip on remote ones.
 - Edit mode: hide works on peer entries (hub-side), delete is not offered.
