@@ -13,10 +13,10 @@ describe("layout", () => {
 
   test("store round-trips, validates and dedupes", () => {
     const store = new LayoutStore(new Database(":memory:"));
-    expect(store.read()).toEqual({ order: { apps: [], agents: [], widgets: [] }, hidden: [] });
+    expect(store.read()).toEqual({ order: { apps: [], agents: [], widgets: [] }, hidden: [], sizes: {} });
     store.update({ order: { apps: ["b", "a", "b", 3 as unknown as string] } });
     store.update({ hidden: ["x"] });
-    expect(store.read()).toEqual({ order: { apps: ["b", "a"], agents: [], widgets: [] }, hidden: ["x"] });
+    expect(store.read()).toEqual({ order: { apps: ["b", "a"], agents: [], widgets: [] }, hidden: ["x"], sizes: {} });
     expect(store.hide("y", true).hidden).toEqual(["x", "y"]);
     expect(store.hide("x", false).hidden).toEqual(["y"]);
     expect(() => store.update({ hidden: "x" as unknown as string[] })).toThrow(/hidden must be/);

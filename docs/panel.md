@@ -51,6 +51,7 @@ Everything the operator does to the launcher happens in **edit mode**: long-pres
 
 - **Move.** Drag a tile to a new place in its group; the order is saved when the tile is dropped (`PUT /api/panel/layout`). Apps, agents and widgets are ordered separately. A peer's entries are ordered on the hub by their prefixed id (`<peer>/<app>`), so moving them never touches the peer.
 - **Hide.** The ✕ on a tile hides the app on this panel (`PATCH /api/apps/:app { hidden: true }`): its tile, agents and widgets disappear, the app itself keeps running and stays in the workspace. `?all=1` on `GET /api/apps` lists hidden apps, and the same route with `hidden: false` brings one back. For a peer's app the ✕ hides it on the hub only (`PATCH /api/peers/:peer/apps/:app`).
+- **Resize a widget.** In edit mode every widget card shows a size picker (1×1, 2×1, 1×2, 2×2: columns × rows). The choice is stored in the layout (`PUT /api/panel/layout { sizes: { "<app>/<widget>": "1x2" } }`) and overrides the manifest's `size` on this panel; `null` returns the widget to the manifest's size. The app's repository is not touched.
 - **Add.** The "Add" tile takes a link; see the previous section.
 - **Uninstall.** Below the app grid, edit mode shows an uninstall zone. Dropping a tile there opens a confirmation that says what will happen, then sends `DELETE /api/apps/:app` (for a peer's app `DELETE /api/peers/:peer/apps/:app`, which the hub forwards to the peer and then refreshes its snapshot). In order:
   1. The service is stopped with the operator's stop command (`SPACE_SERVICE_STOP` in the workspace `.env`, `{app}` replaced by the name, e.g. `sudo systemctl disable --now {app}`). A stop that fails aborts the whole uninstall with 502 and the app stays as it was. With no stop command configured the service is left running and the response says `stopped: "unconfigured"`.
@@ -63,7 +64,7 @@ Everything the operator does to the launcher happens in **edit mode**: long-pres
 
 Two tables in `space.db`, both panel-owned:
 
-- `panel_kv` holds the layout: `{ order: { apps, agents, widgets }, hidden }`. Order lists are ids: app names, `app/name` for agents and widgets, and `<peer>/…` for entries from a peer machine; ids missing from a list follow it, local before peer, alphabetically. `hidden` is the set of apps the panel does not show; they stay registered and scheduled.
+- `panel_kv` holds the layout: `{ order: { apps, agents, widgets }, hidden, sizes }`. Order lists are ids: app names, `app/name` for agents and widgets, and `<peer>/…` for entries from a peer machine; ids missing from a list follow it, local before peer, alphabetically. `hidden` is the set of apps the panel does not show; they stay registered and scheduled. `sizes` maps widget ids to the size the operator chose on the panel, applied over the manifest's `size` when widgets are listed.
 - `chat_sessions` keeps the last ten sessions per agent (`agent`, `sid`, `title`, `ts`). A resumed session gets a new id from the runtime; the previous row is replaced so a conversation stays one entry.
 
 Nothing panel-related is written into an app directory or into the workspace as loose files.

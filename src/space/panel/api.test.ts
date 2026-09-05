@@ -131,13 +131,24 @@ describe("panel api", () => {
 
   test("layout: order and hidden set are stored and applied", async () => {
     const put = await call("/api/panel/layout", jsonInit("PUT", { order: { apps: ["notes", "docs"] }, hidden: ["docs"] }));
-    expect(put.body.layout).toEqual({ order: { apps: ["notes", "docs"], agents: [], widgets: [] }, hidden: ["docs"] });
+    expect(put.body.layout).toEqual({ order: { apps: ["notes", "docs"], agents: [], widgets: [] }, hidden: ["docs"], sizes: {} });
     expect((await call("/api/apps")).body.apps.map((a: Body) => a.name)).toEqual(["notes"]);
     expect((await call("/api/apps?all=1")).body.apps.map((a: Body) => a.name)).toEqual(["notes", "docs", "feed", "old"]);
     const unhide = await call("/api/apps/docs", jsonInit("PATCH", { hidden: false }));
     expect(unhide.body.app.hidden).toBe(false);
     expect((await call("/api/apps/docs", jsonInit("PATCH", { hidden: "yes" }))).status).toBe(400);
     expect((await call("/api/panel/layout", jsonInit("PUT", { order: { apps: "x" } }))).status).toBe(400);
+  });
+
+  test("layout: a widget size chosen on the panel overrides the manifest's until cleared", async () => {
+    const sized = await call("/api/panel/layout", jsonInit("PUT", { sizes: { "notes/recent": "1x2" } }));
+    expect(sized.body.layout.sizes).toEqual({ "notes/recent": "1x2" });
+    expect((await call("/api/widgets")).body.widgets.find((w: Body) => w.id === "notes/recent").size).toBe("1x2");
+    expect((await call("/api/panel/layout", jsonInit("PUT", { sizes: { "notes/recent": "3x3" } }))).status).toBe(400);
+    expect((await call("/api/panel/layout", jsonInit("PUT", { sizes: ["1x1"] }))).status).toBe(400);
+    const cleared = await call("/api/panel/layout", jsonInit("PUT", { sizes: { "notes/recent": null } }));
+    expect(cleared.body.layout.sizes).toEqual({});
+    expect((await call("/api/widgets")).body.widgets.find((w: Body) => w.id === "notes/recent").size).toBe("2x1");
   });
 
   test("widgets: cached payloads, honest errors, embed proxied with the theme", async () => {

@@ -23,7 +23,7 @@ import { type WidgetFeed, sourceUrl } from "./widgets.ts";
  *   GET    /api/widgets                  every widget's latest payload
  *   GET    /api/widgets/:app/:name/embed the page of a `kind: embed` widget, proxied from its source
  *   GET    /api/panel/layout             order + hidden
- *   PUT    /api/panel/layout             { order?: { apps?, agents?, widgets? }, hidden? }
+ *   PUT    /api/panel/layout             { order?: { apps?, agents?, widgets? }, hidden?, sizes? }
  *   GET    /api/panel/appcolor?app=      <meta name="theme-color"> of the app's entry page
  *
  * These routes are what the browser calls. They carry no bearer token: the
@@ -193,7 +193,7 @@ export function createPanelRoutes(opts: PanelApiOptions): Routes {
       GET: wrap(async () => {
         const lay = layout.read();
         const hidden = new Set(lay.hidden);
-        const all = [...(await widgets.all()).filter((w) => !hidden.has(w.app)), ...(peers?.widgets(hidden) ?? [])];
+        const all = [...(await widgets.all()).filter((w) => !hidden.has(w.app)), ...(peers?.widgets(hidden) ?? [])].map((w) => (lay.sizes[w.id] ? { ...w, size: lay.sizes[w.id] } : w));
         return json({ ok: true, widgets: orderBy(all, lay.order.widgets, (w) => w.id, tier), asOf: new Date().toISOString() });
       }),
     },

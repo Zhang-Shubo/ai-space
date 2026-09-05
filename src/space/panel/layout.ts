@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { WIDGET_SIZES, type WidgetSize } from "../scheduler/manifest.ts";
 
 /**
  * Panel layout: the order of tiles and cards and the set of hidden apps.
@@ -10,11 +11,14 @@ export type Layout = {
   order: { apps: string[]; agents: string[]; widgets: string[] };
   /** App names hidden from the panel; the apps stay registered and scheduled. */
   hidden: string[];
+  /** Widget sizes the operator chose on the panel, by widget id; they override the manifest's `size`. */
+  sizes: Record<string, WidgetSize>;
 };
 
-export type LayoutPatch = Partial<{ order: Partial<Layout["order"]>; hidden: string[] }>;
+/** `sizes` merges: a size sets the widget, `null` returns it to the manifest's. */
+export type LayoutPatch = Partial<{ order: Partial<Layout["order"]>; hidden: string[]; sizes: Record<string, string | null> }>;
 
-const EMPTY: Layout = { order: { apps: [], agents: [], widgets: [] }, hidden: [] };
+const EMPTY: Layout = { order: { apps: [], agents: [], widgets: [] }, hidden: [], sizes: {} };
 const KEY = "layout";
 const MAX_NAMES = 500;
 
@@ -42,6 +46,7 @@ export class LayoutStore {
           widgets: names(parsed.order?.widgets),
         },
         hidden: names(parsed.hidden),
+        sizes: sizes(parsed.sizes),
       };
     } catch {
       return structuredClone(EMPTY);
@@ -63,6 +68,15 @@ export class LayoutStore {
     if (patch.hidden !== undefined) {
       if (!Array.isArray(patch.hidden)) throw new Error("hidden must be a list of names");
       cur.hidden = names(patch.hidden);
+    }
+    if (patch.sizes !== undefined) {
+      if (typeof patch.sizes !== "object" || patch.sizes === null || Array.isArray(patch.sizes)) throw new Error("sizes must be an object of widget id to size");
+      for (const [id, size] of Object.entries(patch.sizes)) {
+        if (size === null) delete cur.sizes[id];
+        else if (isSize(size)) cur.sizes[id] = size;
+        else throw new Error(`sizes.${id}: size must be one of ${WIDGET_SIZES.join(", ")} or null`);
+      }
+      if (Object.keys(cur.sizes).length > MAX_NAMES) throw new Error("too many sizes");
     }
     this.db.query("INSERT INTO panel_kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(KEY, JSON.stringify(cur));
     return cur;
@@ -93,4 +107,13 @@ export function orderBy<T>(items: T[], order: string[], nameOf: (item: T) => str
 function names(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.filter((x): x is string => typeof x === "string" && x.length > 0 && x.length <= 200))].slice(0, MAX_NAMES);
+}
+
+const isSize = (v: unknown): v is WidgetSize => typeof v === "string" && (WIDGET_SIZES as readonly string[]).includes(v);
+
+function sizes(v: unknown): Record<string, WidgetSize> {
+  const out: Record<string, WidgetSize> = {};
+  if (typeof v !== "object" || v === null) return out;
+  for (const [id, size] of Object.entries(v as Record<string, unknown>).slice(0, MAX_NAMES)) if (typeof id === "string" && isSize(size)) out[id] = size;
+  return out;
 }

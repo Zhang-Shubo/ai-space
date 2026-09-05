@@ -21,7 +21,9 @@ const TOP_LEVEL_KEYS = ["spec", "name", "title", "description", "icon", "url", "
 
 export type AppStatus = "active" | "paused" | "archived";
 export type AgentRuntime = "claude" | "codex";
-export type WidgetSize = "1x1" | "2x1" | "2x2";
+/** Columns x rows on the panel grid. The panel lets the operator override a widget's size; see panel.md. */
+export const WIDGET_SIZES = ["1x1", "2x1", "1x2", "2x2"] as const;
+export type WidgetSize = (typeof WIDGET_SIZES)[number];
 
 export type ManifestTask = {
   name: string;
@@ -242,12 +244,12 @@ function parseWidget(raw: unknown, where: string): ManifestWidget {
   if (!source) throw new Error(`${ctx}: source is required`);
   if (!source.startsWith("/") && !/^https?:\/\//.test(source)) throw new Error(`${ctx}: source must be a path starting with / or an http(s) URL`);
   const size = raw.size ?? "1x1";
-  if (size !== "1x1" && size !== "2x1" && size !== "2x2") throw new Error(`${ctx}: size must be 1x1, 2x1 or 2x2`);
+  if (!(WIDGET_SIZES as readonly unknown[]).includes(size)) throw new Error(`${ctx}: size must be one of ${WIDGET_SIZES.join(", ")}`);
   const refreshMs = raw.refresh === undefined ? 60_000 : parseDuration(raw.refresh as string | number);
   if (refreshMs < MIN_REFRESH_MS) throw new Error(`${ctx}: refresh must be at least 15s`);
   const title = optionalString(raw.title, `${ctx}: title`);
   const link = optionalString(raw.link, `${ctx}: link`);
-  return { name, ...(title !== undefined ? { title } : {}), kind, source, ...(link !== undefined ? { link } : {}), size, refreshMs };
+  return { name, ...(title !== undefined ? { title } : {}), kind, source, ...(link !== undefined ? { link } : {}), size: size as WidgetSize, refreshMs };
 }
 
 // ---------------------------------------------------------------- tasks

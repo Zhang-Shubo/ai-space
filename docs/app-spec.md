@@ -156,7 +156,7 @@ widgets:
     kind: items                    # items (default) | embed
     source: /api/widget            # path on the app's service, or a full URL
     link: /#latest                 # "view all" target, relative to the app's public URL; default: the app
-    size: 1x1                      # columns x rows on the panel grid: 1x1 (default), 2x1, 2x2
+    size: 1x1                      # columns x rows on the panel grid: 1x1 (default), 2x1, 1x2, 2x2; the operator may override it on the panel
     refresh: 60s                   # how often the panel re-fetches; default 60s, minimum 15s
 ```
 

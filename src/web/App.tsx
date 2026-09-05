@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
-import { type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo, getJson, isImgIcon, relTime, repoUrl, sendJson } from "./api.ts";
+import { WIDGET_SIZES, getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
@@ -13,7 +13,7 @@ import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } f
 const STATUS: Record<string, string> = { active: "active", paused: "paused", archived: "archived" };
 const HEALTH: Record<string, string> = { ok: "up", down: "down", unknown: "" };
 
-type DragProps = Partial<Record<"draggable" | "onDragStart" | "onDragOver" | "onDragEnd", unknown>> | undefined;
+type DragProps = Partial<Record<"draggable" | "onDragStart" | "onDragOver" | "onDragEnd" | "data-drop", unknown>> | undefined;
 
 function Icon({ icon, fallback }: { icon: string; fallback: string }) {
   const [broken, setBroken] = useState(false);
@@ -101,8 +101,9 @@ function Tile({
   );
 }
 
-function Widget({ w, dragProps, theme }: { w: WidgetInfo; dragProps?: DragProps; theme: string }) {
+function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: DragProps; theme: string; onResize?: (size: string) => void }) {
   const embed = `${w.peer ? `/api/peers/${encodeURIComponent(w.peer)}` : "/api"}/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}`;
+  const tall = w.size.endsWith("x2");
   return (
     <div className={`widget s${w.size}${w.stale ? " stale" : ""}`} {...(dragProps as object)} title={w.stale ? `${w.peer} is not answering; last known state` : undefined}>
       <div className="widget-head">
@@ -111,12 +112,22 @@ function Widget({ w, dragProps, theme }: { w: WidgetInfo; dragProps?: DragProps;
         </span>
         <b>{w.title}</b>
         {w.peer && <span className="widget-peer">{w.peer}</span>}
+        {onResize && (
+          // Edit mode: the size picker. Columns x rows; the choice is the panel's, the manifest keeps its own.
+          <span className="widget-size" title="Size (columns × rows)">
+            {WIDGET_SIZES.map((sz) => (
+              <button key={sz} className={sz === w.size ? "on" : ""} onClick={() => onResize(sz)}>
+                {sz.replace("x", "×")}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       {w.kind === "embed" ? (
         <iframe title={w.title} src={embed} sandbox="allow-scripts" loading="lazy" />
       ) : w.ok ? (
         <div className="widget-list">
-          {w.items.slice(0, 6).map((it, i) => (
+          {w.items.slice(0, tall ? 14 : 6).map((it, i) => (
             <a key={i} href={it.url || w.link} target="_blank" rel="noopener noreferrer">
               <span className="wi-text">{it.text}</span>
               {it.time && <span className="wi-time">{relTime(it.time)}</span>}
@@ -475,8 +486,12 @@ export default function App() {
     reload();
   };
 
-  // Drag to reorder in edit mode (HTML5 DnD); the group's order is saved on drop.
-  const dragRef = useRef<{ kind: string; index: number } | null>(null);
+  // Drag to reorder in edit mode (HTML5 DnD). The list is not reordered while the drag is in
+  // progress: moving the dragged node in the DOM makes the browser end the drag, which limited a
+  // drag to one step. The tile under the pointer is marked instead (`data-drop`), and the move
+  // happens when the tile is dropped.
+  const dragRef = useRef<{ kind: string; index: number; over: number } | null>(null);
+  const [dragOver, setDragOver] = useState<{ kind: string; index: number } | null>(null);
   const arrMove = <T,>(arr: T[], from: number, to: number) => {
     const a = arr.slice();
     const [x] = a.splice(from, 1);
@@ -484,31 +499,43 @@ export default function App() {
     return a;
   };
   const saveOrder = (kind: string, ids: string[]) => sendJson("PUT", "/api/panel/layout", { order: { [kind]: ids } }).catch(() => {});
+  // A widget size chosen in edit mode: shown at once, stored in the layout as an override of the manifest's.
+  const resizeWidget = (w: WidgetInfo, size: string) => {
+    setWidgets((cur) => cur.map((x) => (x.id === w.id ? { ...x, size } : x)));
+    sendJson("PUT", "/api/panel/layout", { sizes: { [w.id]: size } }).catch(() => {});
+  };
   const dragProps = <T extends { name?: string; id?: string }>(kind: string, setItems: (fn: (cur: T[]) => T[]) => void, i: number): DragProps =>
     editing
       ? {
           draggable: true,
           onDragStart: (e: React.DragEvent) => {
-            dragRef.current = { kind, index: i };
+            dragRef.current = { kind, index: i, over: i };
             e.dataTransfer.effectAllowed = "move";
           },
           onDragOver: (e: React.DragEvent) => {
-            e.preventDefault();
             const d = dragRef.current;
-            if (!d || d.kind !== kind || d.index === i) return;
-            setItems((cur) => arrMove(cur, d.index, i));
-            d.index = i;
+            if (!d || d.kind !== kind) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (d.over === i) return;
+            d.over = i;
+            setDragOver(i === d.index ? null : { kind, index: i });
           },
           onDragEnd: () => {
+            const d = dragRef.current;
+            dragRef.current = null;
+            setDragOver(null);
+            if (!d || d.over === d.index) return;
             setItems((cur) => {
+              const next = arrMove(cur, d.index, d.over);
               saveOrder(
                 kind,
-                cur.map((x) => x.id ?? x.name ?? ""),
+                next.map((x) => x.id ?? x.name ?? ""),
               );
-              return cur;
+              return next;
             });
-            dragRef.current = null;
           },
+          "data-drop": dragOver?.kind === kind && dragOver.index === i ? (i < (dragRef.current?.index ?? -1) ? "before" : "after") : undefined,
         }
       : undefined;
 
@@ -572,9 +599,12 @@ export default function App() {
             <div
               className={`dropzone${zoneHot ? " hot" : ""}`}
               onDragOver={(e) => {
-                if (dragRef.current?.kind !== "apps") return;
+                const d = dragRef.current;
+                if (d?.kind !== "apps") return;
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
+                d.over = d.index;
+                setDragOver(null);
                 setZoneHot(true);
               }}
               onDragLeave={() => setZoneHot(false)}
@@ -582,7 +612,10 @@ export default function App() {
                 e.preventDefault();
                 setZoneHot(false);
                 const d = dragRef.current;
-                if (d?.kind === "apps") setUninstalling(apps[d.index] ?? null);
+                if (d?.kind === "apps") {
+                  d.over = d.index;
+                  setUninstalling(apps[d.index] ?? null);
+                }
               }}
             >
               <span className="dropzone-icon">🗑</span>
@@ -634,7 +667,7 @@ export default function App() {
             <h2>Widgets</h2>
             <div className={`widgets ${editing ? "editing" : ""}`}>
               {widgets.map((w, i) => (
-                <Widget key={w.id} w={w} theme={theme} dragProps={dragProps("widgets", setWidgets, i)} />
+                <Widget key={w.id} w={w} theme={theme} dragProps={dragProps("widgets", setWidgets, i)} onResize={editing ? (size) => resizeWidget(w, size) : undefined} />
               ))}
             </div>
           </section>
@@ -663,8 +696,14 @@ export default function App() {
       <button className="fab set-btn" title="Settings" onClick={() => setSetsOpen((v) => !v)}>
         ⚙️
       </button>
-      {setsOpen && (
-        <div className="setpop">
+      <div className={`setpop${setsOpen ? " open" : ""}`} aria-hidden={!setsOpen}>
+        <div className="sethead-bar">
+          <b>Settings</b>
+          <button className="chat-hbtn" title="Close" onClick={() => setSetsOpen(false)}>
+            ✕
+          </button>
+        </div>
+        <div className="setbody">
           <label className="setrow">
             Hover details
             <input type="checkbox" role="switch" checked={!prefs.noPop} onChange={() => togglePref("noPop")} />
@@ -732,7 +771,7 @@ export default function App() {
             <p className="setnote">No services registered</p>
           )}
         </div>
-      )}
+      </div>
       <Tasks open={tasksOpen} onClose={() => setTasksOpen(false)} />
       <Chat
         open={chatOpen}
