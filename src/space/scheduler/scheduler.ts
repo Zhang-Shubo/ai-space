@@ -1,4 +1,4 @@
-import type { Manifest } from "./manifest.ts";
+import type { Manifest, ManifestTask } from "./manifest.ts";
 import { assertSchedule, nextRunAt } from "./schedule.ts";
 import type { Store } from "./store.ts";
 import { type RunResult, runTarget } from "./targets.ts";
@@ -345,14 +345,19 @@ export class Scheduler {
     return manifest.status === "active" ? manifest : { ...manifest, tasks: [] };
   }
 
-  /** Idempotent upsert of an app's manifest tasks; unlisted manifest tasks become orphaned. */
-  syncManifest(manifest: Manifest): SyncSummary {
+  /**
+   * Idempotent upsert of an app's manifest tasks; unlisted manifest tasks become orphaned.
+   * `extra` are tasks other services contribute for the app (the backup task); they are
+   * treated exactly like manifest tasks.
+   */
+  syncManifest(manifest: Manifest, extra: ManifestTask[] = []): SyncSummary {
     const now = this.now();
     this.appDirs.set(manifest.app, manifest.dir);
     const summary: SyncSummary = { app: manifest.app, created: [], updated: [], orphaned: [] };
     const seen = new Set<string>();
 
-    for (const mt of manifest.tasks) {
+    for (const mt of [...manifest.tasks, ...extra]) {
+      if (seen.has(mt.name)) throw new Error(`: task  is declared twice`);
       seen.add(mt.name);
       const existing = this.store.findTask(manifest.app, mt.name);
       if (!existing) {

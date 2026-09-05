@@ -216,10 +216,10 @@ tasks:
     timezone: UTC
     run:
       agent: { runtime: claude, prompt: prompts/daily-digest.md, model: sonnet }
-  - name: backup
+  - name: nightly-export
     schedule: "0 3 * * *"
     run:
-      command: "bun scripts/backup.ts"
+      command: "bun scripts/export.ts"
 ```
 
 Exactly one of `at` / `every` / `schedule` and exactly one of `run.http` / `run.command` / `run.agent` per task. Commands and agent runs execute in the app directory with the app's environment (`.env` and `space.env` merged). Real cron expressions live only here, never in a machine's crontab.
@@ -232,12 +232,24 @@ Databases and blob stores. The full reference is in [storage.md](storage.md); th
 storage:
   database: sqlite                 # sqlite (default) | postgres; or a databases: list
   blobs: file                      # none (default) | file | s3
-  backup:
-    schedule: "0 3 * * *"
-    keep: { daily: 7, weekly: 4, monthly: 6 }
 ```
 
 ai-space provisions what is declared and writes `DATABASE_URL`, `BLOB_URL`, `SPACE_APP_DATA_DIR` and, for S3, the `S3_*` credentials into `space.env`. Apps read the URL and connect with whatever client their language has; SQL written against the portable subset in storage.md runs on both backends.
+
+### `backup`
+
+Optional. Every app with a data directory is snapshotted daily without declaring anything; the section adjusts that or opts out. The reference is [backup.md](backup.md).
+
+```yaml
+backup: false                      # opt out; or a mapping:
+backup:
+  schedule: "0 3 * * *"            # default: the workspace hour with a per-app minute
+  keep: { daily: 7, weekly: 4, monthly: 6 }
+  include: [databases, files]      # add blobs for a filesystem blob store
+  exclude: ["cache/"]              # on top of the built-in excludes
+```
+
+The task it registers is named `backup`; an app may not declare a task with that name unless it sets `backup: false`.
 
 ### `notify`
 
@@ -383,9 +395,9 @@ tasks:
 storage:
   database: sqlite
   blobs: file
-  backup:
-    schedule: "0 3 * * *"
-    keep: { daily: 7, weekly: 4 }
+
+backup:
+  keep: { daily: 7, weekly: 4 }
 
 notify:
   channels: [default, reports]
@@ -397,7 +409,8 @@ notify:
 | --- | --- |
 | Workspace layout, app discovery, `space.env` | Implemented (`src/space/workspace.ts`, `src/space/storage/`) |
 | `tasks` | Implemented (`src/space/scheduler/`) |
-| `storage` databases and blob hand-over | Implemented; managed blob API and backups pending |
+| `storage` databases and blob hand-over | Implemented; managed blob API pending |
+| `backup` | Implemented (`src/space/storage/backup/`): daily snapshots, retention, weekly verify, `restore` |
 | `notify`, `/api/notify`, `SPACE_APP_TOKEN` | Implemented (`src/space/notify/`, `skills/notify/`) |
 | Top-level `spec`, `title`, `description`, `icon`, `url`, `status`, `repo` | Implemented (`src/space/scheduler/manifest.ts`); `paused`/`archived` stop the app's tasks |
 | `service` | Parsed; health probed by the panel. Supervision (start, restart, logs, `PORT`) planned |

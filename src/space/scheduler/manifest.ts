@@ -7,7 +7,7 @@ import { DEFAULT_TIMEOUT_MS, TASK_NOTIFY_EVENTS, type Schedule, type Target, typ
  *
  * The top level (identity, `service`, `agents`, `widgets`) and the `tasks`
  * section are interpreted here; `storage`, `notify` and `skills` are passed
- * through raw for their services. Each task declares one schedule form
+ * through raw for their services (`backup` likewise for the backup module). Each task declares one schedule form
  * (`at` / `every` / `schedule` for cron) and one `run` target (`http` /
  * `command` / `agent`). Parsing is strict: an unknown key, a wrong type or a
  * bad value rejects the whole app so nothing partially applies.
@@ -17,7 +17,7 @@ export const MANIFEST_FILE = "space.yaml";
 export const SPEC_VERSION = 1;
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
-const TOP_LEVEL_KEYS = ["spec", "name", "title", "description", "icon", "url", "status", "repo", "i18n", "service", "agents", "widgets", "skills", "tasks", "storage", "notify"];
+const TOP_LEVEL_KEYS = ["spec", "name", "title", "description", "icon", "url", "status", "repo", "i18n", "service", "agents", "widgets", "skills", "tasks", "storage", "notify", "backup"];
 /** A language tag as `i18n:` keys use it: a primary tag and optional subtags (`zh`, `zh-Hant`, `pt-BR`). */
 const LANG_TAG_RE = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
@@ -113,6 +113,8 @@ export type Manifest = {
   storage?: unknown;
   /** Raw `notify:` section, interpreted by the notify service. */
   notify?: unknown;
+  /** Raw `backup:` section, interpreted by the backup module. */
+  backup?: unknown;
 };
 
 export async function loadManifest(dir: string): Promise<Manifest> {
@@ -182,6 +184,7 @@ export function parseManifest(yaml: string, dir: string): Manifest {
     tasks,
     ...(doc.storage !== undefined ? { storage: doc.storage } : {}),
     ...(doc.notify !== undefined ? { notify: doc.notify } : {}),
+    ...(doc.backup !== undefined ? { backup: doc.backup } : {}),
   };
 }
 

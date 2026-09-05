@@ -4,8 +4,24 @@ import { NotifyService, NotifyStore, createNotifyRoutes, createTaskNotifier, loa
 import { SessionStore, createAgentRoutes } from "./space/agents/index.ts";
 import { AppRegistry, HealthProbe, LayoutStore, WidgetFeed, createPanelRoutes, runStopCommand } from "./space/panel/index.ts";
 import { PeerHub, PeerStore, createPeerRoutes, createPeerServeRoutes, loadPeers } from "./space/peers/index.ts";
-import { type Manifest, Scheduler, Store, createRoutes, loadManifest } from "./space/scheduler/index.ts";
+import { type Manifest, Scheduler, Store, createRoutes, effectiveEnabled, loadManifest } from "./space/scheduler/index.ts";
 import { type S3Config, StorageService, createStorageRoutes, openDatabase, parseStorageSpec, sqliteUrl } from "./space/storage/index.ts";
+import {
+  BACKUP_COMMANDS,
+  BACKUP_TASK,
+  type BackupCommand,
+  BackupStore,
+  type BackupTarget,
+  SPACE_APP,
+  type TaskDefaults,
+  backupCli,
+  backupTask,
+  createBackupRoutes,
+  missingArchiveTools,
+  openBackupTarget,
+  parseBackupSpec,
+  spaceManifest,
+} from "./space/storage/backup/index.ts";
 import { type Workspace, discoverApps, ensureWorkspace, loadWorkspaceEnv, resolveHome } from "./space/workspace.ts";
 import { SetupAborted, realDeps, runSetup, terminalIO } from "./space/setup.ts";
 import { createWebRoutes } from "./web/routes.ts";
@@ -18,6 +34,10 @@ import { createWebRoutes } from "./web/routes.ts";
  *   bun src/index.ts env <app>           print the variables storage provisioned for an app, in `export` form
  *   bun src/index.ts notify [opts] text  send a notification through the running ai-space (see `notifyCommand`)
  *   bun src/index.ts setup               interactive first-install walk-through that fills <workspace>/.env (see `src/space/setup.ts`)
+ *   bun src/index.ts backup <app>        snapshot one app's data to the backup target (see `src/space/storage/backup/cli.ts`)
+ *   bun src/index.ts backup-verify        open the newest snapshot of every app
+ *   bun src/index.ts backups [<app>]      list snapshots
+ *   bun src/index.ts restore <app> …      unpack a snapshot (--to <dir> or --in-place)
  *
  * Configuration comes from the environment, then from `<workspace>/.env`
  * (process values win). See `.env.example`, `docs/scheduler.md`, `docs/storage.md`
@@ -48,10 +68,27 @@ export type Config = {
   name: string;
   /** Token a hub must present on `/api/peer/*` (SPACE_HUB_TOKEN); empty = those routes are absent. */
   hubToken: string;
+  /** Where snapshots go (SPACE_BACKUP_URL); default s3://<SPACE_S3_BUCKET>/backups/ when S3 is configured; empty = backup tasks fail until set. */
+  backupUrl: string;
+  /** Cron for the per-app backup tasks (SPACE_BACKUP_SCHEDULE); each app gets its own minute. */
+  backupSchedule: string;
+  /** Cron for the weekly verification (SPACE_BACKUP_VERIFY_SCHEDULE). */
+  backupVerifySchedule: string;
+  /** A newest successful snapshot older than this fails verification and shows stale (SPACE_BACKUP_MAX_AGE_HOURS). */
+  backupMaxAgeMs: number;
+  /** Timeout of one backup run (SPACE_BACKUP_TIMEOUT_MIN). */
+  backupTimeoutMs: number;
 };
 
 export function loadConfig(ws: Workspace, env: Record<string, string | undefined> = process.env): Config {
+  const s3Bucket = env.SPACE_S3_BUCKET?.trim() ?? "";
+  const s3Configured = Boolean(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim());
   return {
+    backupUrl: env.SPACE_BACKUP_URL?.trim() || (s3Configured && s3Bucket ? `s3://${s3Bucket}/backups/` : ""),
+    backupSchedule: env.SPACE_BACKUP_SCHEDULE?.trim() || "0 3 * * *",
+    backupVerifySchedule: env.SPACE_BACKUP_VERIFY_SCHEDULE?.trim() || "0 5 * * 1",
+    backupMaxAgeMs: Math.max(1, Number(env.SPACE_BACKUP_MAX_AGE_HOURS ?? 48) || 48) * 3600_000,
+    backupTimeoutMs: Math.max(1, Number(env.SPACE_BACKUP_TIMEOUT_MIN ?? 30) || 30) * 60_000,
     host: env.SPACE_HOST?.trim() || "127.0.0.1",
     port: Number(env.SPACE_PORT ?? 8700),
     dbPath: resolve(env.SPACE_DB?.trim() || join(ws.data, "space.db")),
@@ -89,9 +126,43 @@ export async function openStorage(ws: Workspace, config: Config, log?: (m: strin
   return StorageService.open({ ws, db, pgAdminUrl: config.pgAdminUrl, s3: config.s3, log });
 }
 
+/** What the backup tasks need to spawn `bun src/index.ts backup <app>` from the scheduler. */
+export function backupTaskDefaults(ws: Workspace, config: Config): TaskDefaults {
+  return {
+    schedule: config.backupSchedule,
+    verifySchedule: config.backupVerifySchedule,
+    timeoutMs: config.backupTimeoutMs,
+    bun: process.execPath,
+    entry: import.meta.path,
+    spaceRoot: resolve(import.meta.dir, ".."),
+    home: ws.home,
+  };
+}
+
+/** Open the backup index and target. A target that cannot be opened is reported, not fatal: the tasks fail visibly instead. */
+export async function openBackups(config: Config, log: (m: string) => void = (m) => console.error(m)) {
+  const db = await openDatabase(sqliteUrl(config.dbPath));
+  const store = await BackupStore.open(db);
+  let target: BackupTarget | undefined;
+  if (!config.backupUrl) log("[backup] SPACE_BACKUP_URL is not set; backup tasks will fail until it is (docs/backup.md)");
+  else {
+    try {
+      target = openBackupTarget(config.backupUrl, config.s3);
+      if (target.kind === "file") log(`[backup] target ${target.url} is on this machine; a copy on the same disk is not a backup`);
+    } catch (e) {
+      log(`[backup] ${(e as Error).message}`);
+    }
+  }
+  const tools = missingArchiveTools();
+  if (tools.length) log(`[backup] ${tools.join(" and ")} not on PATH; backup tasks will fail until installed`);
+  return { db, store, target };
+}
+
 export async function boot(ws: Workspace, config: Config, env: Record<string, string | undefined> = process.env) {
   const store = new Store(config.dbPath);
   const storage = await openStorage(ws, config);
+  const backups = await openBackups(config);
+  const taskDefaults = backupTaskDefaults(ws, config);
   const { channels, errors: channelErrors } = loadChannels(env);
   const notifyStore = new NotifyStore(config.dbPath);
   const notify = new NotifyService({
@@ -116,18 +187,23 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
   const peers = new PeerHub(peerConfigs, { store: new PeerStore(store.db) });
 
   // Storage first, so a command task started right after sync already sees its DATABASE_URL.
+  // Returns the tasks the services contribute for the app: its backup task, unless the manifest opts out.
   const provision = async (manifest: Manifest) => {
+    if (manifest.app === SPACE_APP) throw new Error(`the app name "${SPACE_APP}" is reserved for ai-space itself`);
     const result = await storage.syncApp(manifest.app, parseStorageSpec(manifest.storage));
     for (const p of result.created) console.log(`[storage] ${manifest.app}: created ${p}`);
     for (const n of result.orphaned) console.log(`[storage] ${manifest.app}: ${n} left the manifest, kept as orphaned`);
     notify.syncApp(manifest.app, parseNotifySpec(manifest.notify, { title: manifest.title }));
     await registry.set(manifest);
+    const backup = backupTask(manifest.app, parseBackupSpec(manifest.backup), taskDefaults);
+    if (backup && manifest.tasks.some((t) => t.name === BACKUP_TASK)) throw new Error(`task name "${BACKUP_TASK}" is reserved for ai-space's backup task; rename it, or set backup: false to bring your own`);
+    return backup ? [backup] : [];
   };
 
   const syncDir = async (dir: string) => {
     const manifest = await loadManifest(dir);
-    await provision(manifest);
-    scheduler.syncManifest(Scheduler.schedulable(manifest));
+    const extra = await provision(manifest);
+    scheduler.syncManifest(Scheduler.schedulable(manifest), extra);
   };
 
   // Everything under apps/ plus SPACE_APPS; read again by `POST /api/apps/sync`.
@@ -146,6 +222,8 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
       process.exit(1);
     }
   }
+  // ai-space's own tasks: the space.db snapshot and the weekly verification of every app's newest snapshot.
+  scheduler.syncManifest(spaceManifest(taskDefaults));
   notify.start();
   await scheduler.start();
   peers.start();
@@ -186,6 +264,18 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
         },
       }),
       ...createStorageRoutes({ storage, token: config.apiToken }),
+      ...createBackupRoutes({
+        store: backups.store,
+        target: backups.target,
+        token: config.apiToken,
+        maxAgeMs: config.backupMaxAgeMs,
+        taskFor: (app) => {
+          const t = store.findTask(app, BACKUP_TASK);
+          return t ? { id: t.id, nextRunAt: t.state.nextRunAt, enabled: effectiveEnabled(t) } : undefined;
+        },
+        runNow: (id) => scheduler.runNow(id),
+        apps: () => scheduler.apps().filter((app) => store.findTask(app, BACKUP_TASK)?.orphaned === false),
+      }),
       ...createNotifyRoutes({ notify, store: notifyStore, token: config.apiToken, appForToken: (t) => storage.appForToken(t) }),
       ...panelRoutes,
       ...agentRoutes,
@@ -207,12 +297,13 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     await notify.idle();
     store.close();
     notifyStore.close();
+    await backups.db.close();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 
-  return { store, storage, scheduler, notify, notifyStore, registry, peers, server };
+  return { store, storage, scheduler, notify, notifyStore, registry, peers, server, backups };
 }
 
 /**
@@ -306,6 +397,20 @@ if (import.meta.main) {
     process.exit(0);
   }
   if (command === "notify") process.exit(await notifyCommand(process.argv.slice(3), config));
+  if ((BACKUP_COMMANDS as readonly string[]).includes(command)) {
+    const storage = await openStorage(ws, config, () => {});
+    const code = await backupCli(command as BackupCommand, process.argv.slice(3), {
+      ws,
+      dbPath: config.dbPath,
+      s3: config.s3,
+      backupUrl: config.backupUrl,
+      backupMaxAgeMs: config.backupMaxAgeMs,
+      serviceStop: config.serviceStop,
+      appDirs: async () => [...(await discoverApps(ws)), ...config.extraAppDirs],
+      storage,
+    });
+    process.exit(code);
+  }
   if (command === "setup") {
     try {
       await runSetup(realDeps(terminalIO(), ws));
@@ -317,7 +422,7 @@ if (import.meta.main) {
     process.exit(0);
   }
   if (command !== "start") {
-    console.error(`[space] unknown command: ${command} (expected start, init, env, notify or setup)`);
+    console.error(`[space] unknown command: ${command} (expected start, init, env, notify, setup, backup, backup-verify, backups or restore)`);
     process.exit(2);
   }
   await boot(ws, config);

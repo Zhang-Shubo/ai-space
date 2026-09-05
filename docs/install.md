@@ -12,7 +12,7 @@ The order matters: each step only needs what the steps before it produced.
 | 4. ai-space core | `~/.ai-space`, the unit on `127.0.0.1:8700`, git-push deploys, `bun run setup` | steps 5 to 9 |
 | 5. Cloudflare Tunnel and DNS | the panel and app hostnames | opening the panel from anywhere |
 | 6. Cloudflare Access | who may open those hostnames | must exist before the panel hostname does |
-| 7. Cloudflare R2 | `SPACE_S3_*` | apps that declare `storage.blobs: s3` |
+| 7. Cloudflare R2 | `SPACE_S3_*` | daily backups of every app, apps that declare `storage.blobs: s3` |
 | 8. Notifications | `SPACE_NOTIFY_*` | task failure reports, apps that notify |
 | 9. Peers | `SPACE_NAME`, `SPACE_HUB_TOKEN` or `SPACE_PEER_*` | only with a second machine |
 | 10. First app and checks | a tile, a chat, a task run | done |
@@ -218,6 +218,7 @@ SPACE_S3_BUCKET=<bucket>
 ```
 
 4. `systemctl --user restart ai-space`. The next sync of an app that declares `s3` runs one `list` call with these keys and refuses the sync if it fails, so a wrong key shows up in the log at once. The app then reads `BLOB_URL` and `S3_*` from its `space.env`.
+5. Backups now have a target: `s3://<bucket>/backups/` by default (`SPACE_BACKUP_URL` to change it). Run `bun src/index.ts backup space` once from `~/.ai-space/core` and check the object appeared; from then on every app is snapshotted daily around 03:00 (see [backup.md](backup.md)).
 
 Optional: a custom domain on the bucket (R2 → Settings → Public access) when an app serves files straight from the bucket; the domain must be on the same Cloudflare zone.
 
@@ -281,7 +282,7 @@ Then check, in this order:
 
 ## What is not covered yet
 
-- **Backups.** `~/.ai-space/data/` (space.db, per-app SQLite files, `file` blob stores) and `~/.ai-space/.env` are the state of the machine. Until the backup design in [storage.md](storage.md) is implemented, copy them off the machine yourself (`restic`, `rclone` to the R2 bucket, or a nightly `command` task in an ops app).
+- **The workspace `.env`.** `~/.ai-space/data/` is snapshotted daily to the R2 bucket once step 7 is done (see [backup.md](backup.md); `bun src/index.ts backups` lists them, `backup-verify` opens the newest). `~/.ai-space/.env` is never in a snapshot: keep a copy in the password manager.
 - **Service supervision.** Apps with a `service` run under their own user unit; ai-space probes health but does not start them. Install the unit from the app's `deploy/` directory and `daemon-reload` by hand.
 - **PostgreSQL.** Only if an app declares `storage.database: postgres`: install the server, create a superuser for ai-space, set `SPACE_PG_ADMIN_URL`.
 - **Codex.** The chat runtime is Claude Code only; a `codex` agent answers 501.

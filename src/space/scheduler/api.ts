@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type Manifest, loadManifest } from "./manifest.ts";
+import { type Manifest, type ManifestTask, loadManifest } from "./manifest.ts";
 import { Scheduler, type SyncSummary } from "./scheduler.ts";
 import type { Store } from "./store.ts";
 import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEnabled, effectiveSchedule } from "./types.ts";
@@ -26,8 +26,8 @@ export type ApiOptions = {
   store: Store;
   /** Bearer token for mutating routes; empty disables the check (rely on 127.0.0.1). */
   token?: string;
-  /** Called with a freshly loaded manifest before the scheduler syncs it (storage provisioning). */
-  onManifest?: (manifest: Manifest) => Promise<void>;
+  /** Called with a freshly loaded manifest before the scheduler syncs it (storage provisioning); may return tasks to sync alongside the manifest's (the backup task). */
+  onManifest?: (manifest: Manifest) => Promise<ManifestTask[] | void>;
   /** Every app directory the workspace holds right now; `POST /api/apps/sync` re-reads them all. */
   discover?: () => Promise<string[]>;
   /** Called when a workspace sync finds a registered app's directory gone (panel deregistration). */
@@ -61,8 +61,8 @@ export function createRoutes(opts: ApiOptions): Routes {
   // Load, provision and register one app directory. Shared by both sync routes.
   const syncDir = async (dir: string): Promise<SyncSummary> => {
     const manifest = await loadManifest(dir);
-    if (opts.onManifest) await opts.onManifest(manifest);
-    return scheduler.syncManifest(Scheduler.schedulable(manifest));
+    const extra = opts.onManifest ? await opts.onManifest(manifest) : undefined;
+    return scheduler.syncManifest(Scheduler.schedulable(manifest), extra ?? []);
   };
 
   return {
@@ -150,8 +150,8 @@ export function createRoutes(opts: ApiOptions): Routes {
         if (!dir) return error(404, `unknown app: ${app}; POST /api/apps/sync registers new directories`);
         const manifest = await loadManifest(dir);
         if (manifest.app !== app) return error(400, `manifest in ${dir} names app "${manifest.app}", expected "${app}"`);
-        if (opts.onManifest) await opts.onManifest(manifest);
-        return json({ ok: true, sync: scheduler.syncManifest(Scheduler.schedulable(manifest)) });
+        const extra = opts.onManifest ? await opts.onManifest(manifest) : undefined;
+        return json({ ok: true, sync: scheduler.syncManifest(Scheduler.schedulable(manifest), extra ?? []) });
       }),
     },
   };

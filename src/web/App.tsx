@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
-import { getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
+import { getJson, isImgIcon, relTime, repoUrl, sendJson, untilTime, type AgentInfo, type AppInfo, type BackupInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
 import { type Key, LANGS, type Lang, localized, saveLang, useLang, withLang } from "./i18n.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
@@ -422,6 +422,13 @@ export default function App({ onLang }: { onLang: (lang: Lang) => void }) {
     getJson<{ services: ServiceInfo[]; peers: PeerInfo[] }>("/api/services")
       .then((d) => setServices({ services: d.services || [], peers: d.peers || [] }))
       .catch(() => setServices({ services: [], peers: [] }));
+  }, [setsOpen]);
+  const [backups, setBackups] = useState<BackupInfo[] | null>(null);
+  useEffect(() => {
+    if (!setsOpen) return;
+    getJson<{ backups: BackupInfo[] }>("/api/backups")
+      .then((d) => setBackups(d.backups || []))
+      .catch(() => setBackups([]));
   }, [setsOpen]);
   const savePrefs = (n: Prefs) => {
     localStorage.setItem("panel-prefs", JSON.stringify(n));
@@ -869,6 +876,35 @@ export default function App({ onLang }: { onLang: (lang: Lang) => void }) {
                 })
               ) : (
                 <p className="setnote">{t("settings.noServices")}</p>
+              )}
+              <p className="sethead">{t("settings.backups")}</p>
+              {backups === null ? (
+                <p className="setnote">{t("common.loading")}</p>
+              ) : backups.length ? (
+                backups.map((b) => (
+                  <div
+                    key={b.app}
+                    className="svcrow"
+                    title={[
+                      b.lastOkKey ?? "",
+                      b.lastStatus === "error" && b.lastError ? t("backup.lastError", { error: b.lastError }) : "",
+                      b.lastVerifiedAt !== undefined ? (b.lastVerifyOk ? t("backup.verified", { time: relTime(b.lastVerifiedAt, lang) }) : t("backup.verifyFailed", { error: b.lastVerifyError ?? "" })) : "",
+                      b.nextRunAt ? t("backup.nextRun", { time: untilTime(new Date(b.nextRunAt).toISOString(), lang) }) : "",
+                    ]
+                      .filter(Boolean)
+                      .join("\n")}
+                  >
+                    <span className="svc-ico">🗄</span>
+                    <span className="svc-name">{b.app}</span>
+                    <span className="svc-port">{b.lastOkAt ? relTime(b.lastOkAt, lang) : t("backup.never")}</span>
+                    <span className={`status ${b.stale ? "down" : "ok"}`}>
+                      <i />
+                      {t(b.stale ? "backup.stale" : "backup.fresh")}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="setnote">{t("settings.noBackups")}</p>
               )}
             </div>
           </div>

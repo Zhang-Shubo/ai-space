@@ -42,7 +42,7 @@ async function deps(io: SetupIO, env: Record<string, string | undefined>, over: 
     io,
     ws,
     env,
-    which: async (cmd) => (["claude", "gh"].includes(cmd) ? `/usr/bin/${cmd}` : undefined),
+    which: async (cmd) => (["claude", "gh", "tar", "zstd"].includes(cmd) ? `/usr/bin/${cmd}` : undefined),
     async run(cmd) {
       ran.push(cmd);
       const [bin, ...rest] = cmd;

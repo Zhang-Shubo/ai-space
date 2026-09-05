@@ -8,7 +8,7 @@ import type { Workspace } from "./workspace.ts";
 /**
  * `bun src/index.ts setup`: the interactive first-install walk-through.
  *
- * Checks the tools ai-space spawns (bun, git, claude, gh, cloudflared), then
+ * Checks the tools ai-space spawns (bun, git, tar, zstd, claude, gh, cloudflared), then
  * asks for every workspace `.env` value section by section (core, notification
  * channel, S3 blob store, peers), verifies what can be verified from the
  * machine (a test message, one S3 list call), writes `<workspace>/.env`
@@ -208,6 +208,10 @@ export async function checkTools(d: SetupDeps): Promise<Check[]> {
   checks.push({ name: "bun", ok: bun.code === 0, detail: bun.stdout.trim(), hint: "curl -fsSL https://bun.sh/install | bash" });
   const git = await d.run(["git", "--version"]);
   checks.push({ name: "git", ok: git.code === 0, detail: git.stdout.trim(), hint: "apt-get install git" });
+  for (const tool of ["tar", "zstd"]) {
+    const found = await d.which(tool);
+    checks.push({ name: tool, ok: Boolean(found), detail: found ?? "not on PATH", hint: `apt-get install ${tool} (backups archive with it; see docs/backup.md)` });
+  }
   const gitUser = await d.run(["git", "config", "--global", "user.email"]);
   checks.push({
     name: "git identity",
@@ -313,6 +317,7 @@ export async function runSetup(d: SetupDeps): Promise<SetupOutcome> {
   io.say("[4/5] Blob store (S3-compatible, e.g. Cloudflare R2)");
   const hasS3 = Boolean(current("SPACE_S3_ACCESS_KEY_ID"));
   if (hasS3) io.say(`  configured: ${current("SPACE_S3_ENDPOINT") || "aws"} bucket ${current("SPACE_S3_BUCKET") || "(per app)"}`);
+  io.say("  Backups go to s3://<default bucket>/backups/ with these credentials unless SPACE_BACKUP_URL says otherwise (docs/backup.md).");
   io.say("  Only apps that declare `storage.blobs: s3` use it; `file` stores need nothing here.");
   if (await io.confirm(hasS3 ? "Change the S3 credentials?" : "Configure one now?", false)) {
     const s3 = await askS3(d);

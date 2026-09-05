@@ -2,7 +2,7 @@
 
 The storage service is the Space-layer answer to "where does an app keep its data". It covers three things that every app otherwise solves on its own: a relational database, a place for large files (images, video, exports), and backups of both. Apps declare what they need in `space.yaml`; ai-space provisions it, hands the app a connection string, and keeps the copies.
 
-Status: the database half is implemented in `src/space/storage/` (client, migrations, manifest section, provisioning, `space.env`, API, `env` command). Blob stores are provisioned and handed over (`storage.blobs` in the manifest, `BLOB_URL` plus `S3_*` credentials in `space.env`); the managed blob API on top (index table, streaming routes, presigning) and backups are design only. The scheduler's own store (`src/space/scheduler/store.ts`) still uses `bun:sqlite` directly and moves onto the client in a later change.
+Status: the database half is implemented in `src/space/storage/` (client, migrations, manifest section, provisioning, `space.env`, API, `env` command). Blob stores are provisioned and handed over (`storage.blobs` in the manifest, `BLOB_URL` plus `S3_*` credentials in `space.env`); the managed blob API on top (index table, streaming routes, presigning) is design only. Backups are implemented in `src/space/storage/backup/`; see [backup.md](backup.md). The scheduler's own store (`src/space/scheduler/store.ts`) still uses `bun:sqlite` directly and moves onto the client in a later change.
 
 ## Goals and non-goals
 
@@ -236,6 +236,8 @@ Mutating routes require the bearer token, as with the scheduler. An app that run
 
 ## Backups
 
+The implementation plan lives in [backup.md](backup.md); it supersedes this section where the two differ (backups are on by default for every app with a data directory, state files are included, snapshots carry a sidecar manifest in the bucket).
+
 ### What is backed up
 
 | Source | Method | Notes |
@@ -358,5 +360,5 @@ The scheduler's `store.ts` moves onto `openDatabase` in the same change that int
 2. Done: `storage.blobs` (file and s3), the reachability probe, `BLOB_URL` and `S3_*` in `space.env`, the inventory table and `describe`.
 3. The scheduler store on top of `db.ts`.
 4. `blobs.ts`: the managed store with the index, filesystem and S3 backends, HTTP routes and presigning.
-5. `backup.ts`: snapshot and upload, then prune, then verify, then restore.
+5. The backup module, in the phases listed in [backup.md](backup.md).
 6. `storage rm` and the `backup` key of the `space.yaml` section.

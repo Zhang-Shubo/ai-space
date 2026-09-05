@@ -188,3 +188,21 @@ export const untilTime = (iso: string, lang: Lang = "en") => {
   const h = Math.round(m / 60);
   return h < 24 ? translate(lang, "time.inH", { n: h }) : translate(lang, "time.inD", { n: Math.round(h / 24) });
 };
+
+export type BackupInfo = {
+  app: string;
+  count: number;
+  lastAt?: number;
+  lastStatus?: "ok" | "error";
+  lastError?: string;
+  lastOkAt?: number;
+  lastOkKey?: string;
+  lastOkBytes?: number;
+  lastVerifiedAt?: number;
+  lastVerifyOk?: boolean;
+  lastVerifyError?: string;
+  stale: boolean;
+  taskId?: string;
+  nextRunAt?: number;
+  enabled?: boolean;
+};
