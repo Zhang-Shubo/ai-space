@@ -135,7 +135,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
   border: 1px solid var(--glass-border); border-radius: 18px; box-shadow: var(--shadow);
   overflow: hidden;
 }
-.panel.settings { width: min(360px, 94vw); }
+.panel.settings { width: min(560px, 94vw); }
 .panel-head {
   flex: none; display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--glass-border); font-size: 15px;

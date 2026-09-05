@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
@@ -120,6 +120,23 @@ function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: 
   const tall = w.size.endsWith("x2");
   const card = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState<string | null>(null);
+  // A size change (a drag snapping to the next cell, or a layout loaded later) is animated from the
+  // card's previous box to its new one: grid spans cannot transition, so the box is measured before
+  // and after the render and tweened with the Web Animations API.
+  const lastBox = useRef<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = card.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const prev = lastBox.current;
+    lastBox.current = { w: r.width, h: r.height };
+    if (!prev || (prev.w === r.width && prev.h === r.height) || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.style.overflow = "hidden";
+    const anim = el.animate([{ width: `${prev.w}px`, height: `${prev.h}px` }, { width: `${r.width}px`, height: `${r.height}px` }], { duration: 240, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+    anim.onfinish = () => {
+      el.style.overflow = "";
+    };
+  }, [w.size]);
   // Edit mode: the handle in the bottom-right corner resizes by dragging (pointer events, so the
   // HTML5 drag that reorders cards does not start). One cell is the card's current width divided by
   // its columns; crossing half a cell snaps to the next size, and the size is saved on release.
