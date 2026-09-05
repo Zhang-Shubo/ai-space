@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { loadManifest } from "../../scheduler/manifest.ts";
 import { runStopCommand } from "../../panel/index.ts";
@@ -180,24 +180,19 @@ async function findManifest(app: string, ctx: CliContext): Promise<{ dir: string
   return undefined;
 }
 
-/** `space` plus every app with a data directory whose manifest does not opt out. */
+/** `space` plus every registered app (a directory with a manifest) that does not opt out: the apps that have a backup task. */
 async function backedUpApps(ctx: CliContext): Promise<string[]> {
-  const specs = new Map<string, BackupSpec>();
+  const apps = new Set([SPACE_APP]);
   for (const dir of await ctx.appDirs()) {
     try {
       const m = await loadManifest(dir);
-      specs.set(m.app, parseBackupSpec(m.backup));
+      const spec: BackupSpec = parseBackupSpec(m.backup);
+      if (spec.enabled) apps.add(m.app);
     } catch {
       /* skipped at boot too */
     }
   }
-  const apps = [SPACE_APP];
-  for (const name of (await readdir(ctx.ws.data)).sort()) {
-    if (!(await isDir(join(ctx.ws.data, name)))) continue;
-    if (specs.get(name)?.enabled === false) continue;
-    apps.push(name);
-  }
-  return apps;
+  return [...apps].sort((a, b) => (a === SPACE_APP ? -1 : b === SPACE_APP ? 1 : a.localeCompare(b)));
 }
 
 async function isDir(path: string): Promise<boolean> {
