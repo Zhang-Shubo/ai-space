@@ -74,7 +74,6 @@ export type PeerInfo = {
 };
 
 export type Layout = { order: { apps: string[]; agents: string[]; widgets: string[] }; hidden: string[]; sizes: Record<string, string> };
-export const WIDGET_SIZES = ["1x1", "2x1", "1x2", "2x2"];
 
 export type ChatSession = { sid: string; title: string; ts: number };
 

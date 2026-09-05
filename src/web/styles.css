@@ -501,13 +501,18 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .widget.s1x2, .widget.s2x2 { grid-row: span 2; }
 @media (max-width: 700px) { .widget.s2x1, .widget.s2x2 { grid-column: auto; } }
 .widget.s1x2 iframe { min-height: 340px; }
-/* Edit mode: the size picker at the right of the widget head. */
-.widget-size { margin-left: auto; display: flex; gap: 3px; flex: none; }
-.widget-size button {
-  border: 1px solid var(--glass-border); background: var(--glass); color: var(--muted);
-  border-radius: 6px; padding: 2px 6px; font: inherit; font-size: 11px; cursor: pointer; line-height: 1.3;
+/* Edit mode: the current size in the head, and a grip in the bottom-right corner that resizes by dragging. */
+.widget-size { margin-left: auto; flex: none; font-size: 11px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.widget.resizing .widget-size { color: var(--accent, #8b5cf6); }
+.widget-grip {
+  position: absolute; right: 6px; bottom: 6px; width: 22px; height: 22px; cursor: nwse-resize; z-index: 3;
+  border-radius: 6px; touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 0 55%, var(--accent, #8b5cf6) 55% 65%, transparent 65% 75%, var(--accent, #8b5cf6) 75% 85%, transparent 85%);
+  opacity: 0.8;
 }
-.widget-size button.on { background: var(--accent, #8b5cf6); color: #fff; border-color: transparent; }
+.widget-grip:hover, .widget.resizing .widget-grip { opacity: 1; }
+.widget.resizing { outline: 2px solid var(--accent, #8b5cf6); outline-offset: 4px; }
 .widget iframe { width: 100%; border: 0; border-radius: 10px; min-height: 160px; flex: 1; background: transparent; }
 .widget.s2x2 iframe { min-height: 340px; }
 .widget {

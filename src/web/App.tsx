@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import Chat from "./Chat.tsx";
 import Pet, { DEFAULT_SHEET } from "./Pet.tsx";
 import Tasks from "./Tasks.tsx";
-import { WIDGET_SIZES, getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
+import { getJson, isImgIcon, relTime, repoUrl, sendJson, type AgentInfo, type AppInfo, type PeerInfo, type ServiceInfo, type WidgetInfo } from "./api.ts";
 import { type PetChoice, type PetdexPet, loadPetdex, resolvePet, suggestPets } from "./petdex.ts";
 
 // Launcher-style panel: App and Agent tiles with hover details, widget cards, a chat drawer.
@@ -101,28 +101,65 @@ function Tile({
   );
 }
 
-function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: DragProps; theme: string; onResize?: (size: string) => void }) {
+/** Grid gap of `.widgets`, for turning a drag distance into columns and rows. */
+const WIDGET_GAP = 20;
+const MAX_COLS = 2;
+const MAX_ROWS = 2;
+
+function Widget({ w, dragProps, theme, onResize }: { w: WidgetInfo; dragProps?: DragProps; theme: string; onResize?: (size: string, commit: boolean) => void }) {
   const embed = `${w.peer ? `/api/peers/${encodeURIComponent(w.peer)}` : "/api"}/widgets/${encodeURIComponent(w.app)}/${encodeURIComponent(w.name)}/embed?theme=${theme}`;
   const tall = w.size.endsWith("x2");
+  const card = useRef<HTMLDivElement>(null);
+  const [resizing, setResizing] = useState<string | null>(null);
+  // Edit mode: the handle in the bottom-right corner resizes by dragging (pointer events, so the
+  // HTML5 drag that reorders cards does not start). One cell is the card's current width divided by
+  // its columns; crossing half a cell snaps to the next size, and the size is saved on release.
+  const startResize = (e: React.PointerEvent) => {
+    if (!onResize || !card.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const [cols0, rows0] = w.size.split("x").map(Number) as [number, number];
+    const rect = card.current.getBoundingClientRect();
+    const cellW = (rect.width - WIDGET_GAP * (cols0 - 1)) / cols0;
+    const cellH = (rect.height - WIDGET_GAP * (rows0 - 1)) / rows0;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let last = w.size;
+    const sizeAt = (ev: PointerEvent) => {
+      const cols = Math.min(MAX_COLS, Math.max(1, cols0 + Math.round((ev.clientX - x0) / (cellW + WIDGET_GAP))));
+      const rows = Math.min(MAX_ROWS, Math.max(1, rows0 + Math.round((ev.clientY - y0) / (cellH + WIDGET_GAP))));
+      return `${cols}x${rows}`;
+    };
+    const move = (ev: PointerEvent) => {
+      const next = sizeAt(ev);
+      setResizing(next);
+      if (next !== last) {
+        last = next;
+        onResize(next, false);
+      }
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      setResizing(null);
+      onResize(sizeAt(ev), true);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
   return (
-    <div className={`widget s${w.size}${w.stale ? " stale" : ""}`} {...(dragProps as object)} title={w.stale ? `${w.peer} is not answering; last known state` : undefined}>
+    <div ref={card} className={`widget s${w.size}${w.stale ? " stale" : ""}${resizing ? " resizing" : ""}`} {...(dragProps as object)} title={w.stale ? `${w.peer} is not answering; last known state` : undefined}>
       <div className="widget-head">
         <span className="widget-ico">
           <Icon icon={w.icon} fallback="📦" />
         </span>
         <b>{w.title}</b>
         {w.peer && <span className="widget-peer">{w.peer}</span>}
-        {onResize && (
-          // Edit mode: the size picker. Columns x rows; the choice is the panel's, the manifest keeps its own.
-          <span className="widget-size" title="Size (columns × rows)">
-            {WIDGET_SIZES.map((sz) => (
-              <button key={sz} className={sz === w.size ? "on" : ""} onClick={() => onResize(sz)}>
-                {sz.replace("x", "×")}
-              </button>
-            ))}
-          </span>
-        )}
+        {onResize && <span className="widget-size">{(resizing ?? w.size).replace("x", "×")}</span>}
       </div>
+      {onResize && <span className="widget-grip" title="Drag to resize (columns × rows)" draggable={false} onPointerDown={startResize} onDragStart={(e) => e.preventDefault()} />}
       {w.kind === "embed" ? (
         <iframe title={w.title} src={embed} sandbox="allow-scripts" loading="lazy" />
       ) : w.ok ? (
@@ -499,10 +536,11 @@ export default function App() {
     return a;
   };
   const saveOrder = (kind: string, ids: string[]) => sendJson("PUT", "/api/panel/layout", { order: { [kind]: ids } }).catch(() => {});
-  // A widget size chosen in edit mode: shown at once, stored in the layout as an override of the manifest's.
-  const resizeWidget = (w: WidgetInfo, size: string) => {
+  // A widget size dragged in edit mode: shown while the drag goes on, stored in the layout (as an
+  // override of the manifest's) when the handle is released.
+  const resizeWidget = (w: WidgetInfo, size: string, commit: boolean) => {
     setWidgets((cur) => cur.map((x) => (x.id === w.id ? { ...x, size } : x)));
-    sendJson("PUT", "/api/panel/layout", { sizes: { [w.id]: size } }).catch(() => {});
+    if (commit) sendJson("PUT", "/api/panel/layout", { sizes: { [w.id]: size } }).catch(() => {});
   };
   const dragProps = <T extends { name?: string; id?: string }>(kind: string, setItems: (fn: (cur: T[]) => T[]) => void, i: number): DragProps =>
     editing
@@ -667,7 +705,7 @@ export default function App() {
             <h2>Widgets</h2>
             <div className={`widgets ${editing ? "editing" : ""}`}>
               {widgets.map((w, i) => (
-                <Widget key={w.id} w={w} theme={theme} dragProps={dragProps("widgets", setWidgets, i)} onResize={editing ? (size) => resizeWidget(w, size) : undefined} />
+                <Widget key={w.id} w={w} theme={theme} dragProps={dragProps("widgets", setWidgets, i)} onResize={editing ? (size, commit) => resizeWidget(w, size, commit) : undefined} />
               ))}
             </div>
           </section>
