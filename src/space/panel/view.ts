@@ -18,6 +18,8 @@ export type AgentView = {
   description?: string;
   /** Emoji, or a URL the panel can load. */
   avatar: string;
+  /** The owning app's icon, for the corner of the agent's tile. */
+  appIcon: string;
   runtime: ManifestAgent["runtime"];
 };
 
@@ -89,6 +91,7 @@ export function agentView(m: Manifest, a: ManifestAgent): AgentView {
     title: a.title,
     ...(a.description !== undefined ? { description: a.description } : {}),
     avatar: avatarUrl(m, a),
+    appIcon: iconUrl(m),
     runtime: a.runtime,
   };
 }

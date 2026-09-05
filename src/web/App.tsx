@@ -33,6 +33,7 @@ function Tile({
   showPop = true,
   dragProps,
   stale,
+  corner,
   children,
 }: {
   icon: string;
@@ -47,6 +48,8 @@ function Tile({
   dragProps?: DragProps;
   /** The peer is not answering: the entry is its last known state. */
   stale?: boolean;
+  /** A small icon over the icon's bottom-right corner: the app an agent belongs to. */
+  corner?: string;
   children?: ReactNode;
 }) {
   // onOpen wins over href: agent tiles open the chat drawer; links move into the pop-over.
@@ -70,6 +73,11 @@ function Tile({
       )}
       <span className={`tile-icon ${isImgIcon(icon) ? "" : "solid"}`}>
         <Icon icon={icon} fallback={fallback} />
+        {corner && (
+          <span className={`tile-corner ${isImgIcon(corner) ? "" : "solid"}`}>
+            <Icon icon={corner} fallback="📦" />
+          </span>
+        )}
       </span>
       <span className="tile-name">{name}</span>
       {!editing && !popHidden && showPop && <div className="pop">{children}</div>}
@@ -262,7 +270,7 @@ export default function App() {
   // The tasks drawer shares the right edge with the chat; opening one closes the other.
   const [tasksOpen, setTasksOpen] = useState(false);
   // The chat opens on the space agent by default; an agent tile switches to that agent.
-  const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", avatar: "✨", runtime: "claude" });
+  const [chatAgent, setChatAgent] = useState<AgentInfo>({ id: "space/assistant", app: "space", name: "assistant", title: "Base", avatar: "✨", appIcon: "✨", runtime: "claude" });
   const [prefs, setPrefs] = useState<Prefs>(() => {
     try {
       return (JSON.parse(localStorage.getItem("panel-prefs") || "{}") as Prefs) || {};
@@ -531,6 +539,7 @@ export default function App() {
                   }}
                   showPop={!prefs.noPop}
                   dragProps={dragProps("agents", setAgents, i)}
+                  corner={a.app !== "space" && a.appIcon !== a.avatar ? a.appIcon : undefined}
                 >
                   <p className="pop-title">
                     {a.title}

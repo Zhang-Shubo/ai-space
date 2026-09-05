@@ -9,6 +9,8 @@ export type AgentInfo = {
   title: string;
   description?: string;
   avatar: string;
+  /** The owning app's icon, shown in the corner of the tile. */
+  appIcon: string;
   runtime: string;
 };
 

@@ -19,7 +19,7 @@ So the panel is a set of routes in ai-space's `Bun.serve`, a React page bundled 
 | Section | Source | Notes |
 | --- | --- | --- |
 | Apps | every registered manifest that has a `url`, with `status` other than `archived`, minus the hidden set | Tile: `icon` and `title`, nothing else on the icon. Click opens `url`. Hover shows the description, the status (health when the app declares `service.health`) and the repository. |
-| Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title; click opens the chat drawer on that agent. |
+| Agents | `agents:` of every visible app, plus the space agent | Tile shows the avatar and title, with the owning app's icon in the corner when it differs from the avatar; click opens the chat drawer on that agent. |
 | Widgets | `widgets:` of every visible app | `items` cards render the list in the house style; `embed` cards load the app's page in a sandboxed iframe through ai-space. |
 
 | Services (in the settings pop-over) | every registered manifest with a `service` | One row per service: icon, title, loopback port, health. |

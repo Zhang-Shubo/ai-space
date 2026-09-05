@@ -16,7 +16,7 @@ export function peerRoute(peer: string, s: string): string {
 }
 
 export function mergeAgent(peer: string, a: AgentView): AgentView {
-  return { ...a, id: peerId(peer, a.id), peer, avatar: peerRoute(peer, a.avatar) };
+  return { ...a, id: peerId(peer, a.id), peer, avatar: peerRoute(peer, a.avatar), appIcon: peerRoute(peer, a.appIcon) };
 }
 
 /** Every app of the snapshot, `hidden` set from the hub's layout; the caller filters. */

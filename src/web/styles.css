@@ -52,7 +52,7 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 .launcher { display: grid; grid-template-columns: repeat(auto-fill, 96px); gap: 28px 20px; }
 .tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
 .tile-icon {
-  width: 64px; height: 64px; border-radius: 16px;
+  position: relative; width: 64px; height: 64px; border-radius: 16px;
   background: var(--glass);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
@@ -64,6 +64,14 @@ h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 
 /* An emoji icon sits on an opaque plate; image icons bring their own background. */
 .tile-icon.solid { background: var(--solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
 
+/* The app an agent belongs to, over the avatar's bottom-right corner. */
+.tile-corner {
+  position: absolute; right: -6px; bottom: -6px; width: 26px; height: 26px; border-radius: 8px;
+  background: var(--glass); border: 2px solid var(--solid); box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; overflow: hidden;
+}
+.tile-corner.solid { background: var(--solid); }
+.tile-corner img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
 .tile:focus, .tile:focus-visible { outline: none; }
 .tile:focus-visible .tile-icon { box-shadow: 0 0 0 3px var(--accent, #8b5cf6); }
 .tile-icon img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
