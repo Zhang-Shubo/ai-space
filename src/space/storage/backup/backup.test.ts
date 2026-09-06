@@ -326,6 +326,7 @@ describe("helpers", () => {
     expect(parseKey("keep/2026-09-05T03-00-00Z.json")).toEqual({ app: "keep", at, archive: "keep/2026-09-05T03-00-00Z.tar.zst" });
     expect(parseKey("keep/stray.tar.zst")).toBeUndefined();
     expect(parseKey("notes.txt")).toBeUndefined();
+    expect(parseKey("david/space/2026-09-05T03-00-00Z.json")).toBeUndefined(); // another machine's prefix nested under ours
   });
 
   test("target urls", () => {

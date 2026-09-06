@@ -106,7 +106,7 @@ export function sidecarKey(key: string): string {
 
 /** Split an archive or sidecar key back into app and time; undefined for keys this module did not write. */
 export function parseKey(key: string): { app: string; at: Date; archive: string } | undefined {
-  const m = /^(.+)\/([^/]+?)(\.tar\.zst|\.json)$/.exec(key);
+  const m = /^([^/]+)\/([^/]+?)(\.tar\.zst|\.json)$/.exec(key); // one segment: another machine's prefix nested under this one is not ours|\.json)$/.exec(key);
   if (!m) return undefined;
   const at = parseStamp(m[2]!);
   if (!at) return undefined;
