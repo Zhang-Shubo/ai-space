@@ -29,7 +29,7 @@ Rules that follow from the existing design and stay true:
 
 ## Naming
 
-Names are per machine, so `media` on one machine and `media` on another are different apps. On the hub, a peer app is addressed by `<peer>/<app>`, an agent by `<peer>/<app>/<agent>`, a widget by `<peer>/<app>/<widget>`. Local apps keep their bare names; `<peer>` is a reserved first segment. Peer names follow the app-name rule (`[a-z0-9][a-z0-9._-]*`) and may not equal a local app name; the hub refuses to boot on a collision, since a tile called `david` would then be ambiguous.
+Names are per machine, so `media` on one machine and `media` on another are different apps (which is also why each machine backs up under its own prefix, see [backup.md](backup.md#several-machines)). On the hub, a peer app is addressed by `<peer>/<app>`, an agent by `<peer>/<app>/<agent>`, a widget by `<peer>/<app>/<widget>`. Local apps keep their bare names; `<peer>` is a reserved first segment. Peer names follow the app-name rule (`[a-z0-9][a-z0-9._-]*`) and may not equal a local app name; the hub refuses to boot on a collision, since a tile called `david` would then be ambiguous.
 
 The prefix is a display and layout key, not a route parameter: app names cannot contain `/` and the panel routes are shaped `/api/apps/:app`, so peer routes get their own prefix (below) and views carry a `peer` field next to the bare `name`. Every app view now has an `id` (the name, or `<peer>/<name>`), which is what the layout order and the hidden set hold. The web UI names the peer in the tile's hover card and uses `peer` to pick the route base.
 
@@ -141,12 +141,13 @@ A link app on the hub whose `url` equals a peer app's `url` is superseded. `GET 
 3. Publish its port on a hostname of the machine's tunnel; exempt `/api/peer/*` from the access layer or note the layer's service credentials.
 4. In the hub's `.env`: `SPACE_PEER_<NAME>`, `_TOKEN` and, if needed, `_HEADERS`; restart the hub. `GET /api/peers` shows `ok` and the counts, or the error.
 5. Delete the link apps listed under `duplicates`.
+6. Backups: give the peer the same `SPACE_S3_*` credentials (or its own bucket). Its snapshots land under `backups/<SPACE_NAME>/`, apart from the hub's; never point two machines at one prefix, since both have a `space` app and may share app names. See [backup.md](backup.md#several-machines).
 
 ## Later
 
 - **Peer tasks**: `GET /api/peer/tasks` and `/api/peer/tasks/:id/runs`, read-only, so the Tasks drawer groups tasks by machine. Running or toggling a task stays on the machine that owns it.
 - **Peer storage inventory** in the settings, read-only.
-- **Peer notifications**: none needed; each machine notifies through its own channels.
+- **Peer notifications**: none needed; each machine notifies through its own channels. Backups likewise: each machine snapshots its own data under its own prefix; the hub's Backups list shows local apps only.
 - **A peer behind no tunnel** (a laptop): a reverse connection the peer opens to the hub. Out of scope until a machine needs it.
 
 ## Without a peer

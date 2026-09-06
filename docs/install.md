@@ -218,7 +218,7 @@ SPACE_S3_BUCKET=<bucket>
 ```
 
 4. `systemctl --user restart ai-space`. The next sync of an app that declares `s3` runs one `list` call with these keys and refuses the sync if it fails, so a wrong key shows up in the log at once. The app then reads `BLOB_URL` and `S3_*` from its `space.env`.
-5. Backups now have a target: `s3://<bucket>/backups/` by default (`SPACE_BACKUP_URL` to change it). Run `bun src/index.ts backup space` once from `~/.ai-space/core` and check the object appeared; from then on every app is snapshotted daily around 03:00 (see [backup.md](backup.md)).
+5. Backups now have a target: `s3://<bucket>/backups/<SPACE_NAME>/` by default (`SPACE_BACKUP_URL` to change it; one prefix per machine). Run `bun src/index.ts backup space` once from `~/.ai-space/core` and check the object appeared; from then on every app is snapshotted daily around 03:00 (see [backup.md](backup.md)).
 
 Optional: a custom domain on the bucket (R2 → Settings → Public access) when an app serves files straight from the bucket; the domain must be on the same Cloudflare zone.
 

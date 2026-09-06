@@ -73,3 +73,13 @@ test("parseNotifyArgs builds the request body from flags and text", () => {
   expect(() => parseNotifyArgs(["--app", "a", "--title"], {})).toThrow(/needs a value/);
   expect(() => parseNotifyArgs(["--app", "a", "--loud", "x"], {})).toThrow(/unknown option/);
 });
+
+test("loadConfig derives the backup target from the bucket and the machine name", () => {
+  const s3 = { SPACE_S3_ACCESS_KEY_ID: "AK", SPACE_S3_SECRET_ACCESS_KEY: "SK", SPACE_S3_BUCKET: "media" };
+  expect(loadConfig(ws, {}).backupUrl).toBe("");
+  expect(loadConfig(ws, { SPACE_S3_ACCESS_KEY_ID: "AK", SPACE_S3_SECRET_ACCESS_KEY: "SK" }).backupUrl).toBe("");
+  expect(loadConfig(ws, { ...s3, SPACE_NAME: "david" }).backupUrl).toBe("s3://media/backups/david/");
+  expect(loadConfig(ws, { ...s3 }).backupUrl).toBe(`s3://media/backups/${loadConfig(ws, {}).name}/`);
+  expect(loadConfig(ws, { ...s3, SPACE_NAME: "david", SPACE_BACKUP_URL: " s3://other/x/ " }).backupUrl).toBe("s3://other/x/");
+  expect(loadConfig(ws, { SPACE_BACKUP_MAX_AGE_HOURS: "24", SPACE_BACKUP_TIMEOUT_MIN: "5" })).toMatchObject({ backupMaxAgeMs: 24 * 3600_000, backupTimeoutMs: 5 * 60_000, backupSchedule: "0 3 * * *", backupVerifySchedule: "0 5 * * 1" });
+});

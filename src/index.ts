@@ -68,7 +68,7 @@ export type Config = {
   name: string;
   /** Token a hub must present on `/api/peer/*` (SPACE_HUB_TOKEN); empty = those routes are absent. */
   hubToken: string;
-  /** Where snapshots go (SPACE_BACKUP_URL); default s3://<SPACE_S3_BUCKET>/backups/ when S3 is configured; empty = backup tasks fail until set. */
+  /** Where snapshots go (SPACE_BACKUP_URL); default s3://<SPACE_S3_BUCKET>/backups/<SPACE_NAME>/ when S3 is configured; empty = backup tasks fail until set. */
   backupUrl: string;
   /** Cron for the per-app backup tasks (SPACE_BACKUP_SCHEDULE); each app gets its own minute. */
   backupSchedule: string;
@@ -83,8 +83,10 @@ export type Config = {
 export function loadConfig(ws: Workspace, env: Record<string, string | undefined> = process.env): Config {
   const s3Bucket = env.SPACE_S3_BUCKET?.trim() ?? "";
   const s3Configured = Boolean(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim());
+  const name = env.SPACE_NAME?.trim() || hostname();
   return {
-    backupUrl: env.SPACE_BACKUP_URL?.trim() || (s3Configured && s3Bucket ? `s3://${s3Bucket}/backups/` : ""),
+    // One prefix per machine: several spaces sharing a bucket must not mix their `space/` (and same-named apps') snapshots.
+    backupUrl: env.SPACE_BACKUP_URL?.trim() || (s3Configured && s3Bucket ? `s3://${s3Bucket}/backups/${name}/` : ""),
     backupSchedule: env.SPACE_BACKUP_SCHEDULE?.trim() || "0 3 * * *",
     backupVerifySchedule: env.SPACE_BACKUP_VERIFY_SCHEDULE?.trim() || "0 5 * * 1",
     backupMaxAgeMs: Math.max(1, Number(env.SPACE_BACKUP_MAX_AGE_HOURS ?? 48) || 48) * 3600_000,
@@ -104,7 +106,7 @@ export function loadConfig(ws: Workspace, env: Record<string, string | undefined
     chatModel: env.SPACE_CHAT_MODEL?.trim() ?? "sonnet",
     chatArgs: (env.SPACE_CHAT_ARGS ?? "").split(/\s+/).filter(Boolean),
     serviceStop: env.SPACE_SERVICE_STOP?.trim() ?? "",
-    name: env.SPACE_NAME?.trim() || hostname(),
+    name,
     hubToken: env.SPACE_HUB_TOKEN?.trim() ?? "",
     ...(env.SPACE_S3_ACCESS_KEY_ID?.trim() && env.SPACE_S3_SECRET_ACCESS_KEY?.trim()
       ? {
