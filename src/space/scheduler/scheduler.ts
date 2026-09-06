@@ -60,6 +60,8 @@ export class Scheduler {
   private readonly envFor?: (app: string) => Promise<Record<string, string>>;
   private readonly onFinish?: SchedulerOptions["onFinish"];
   private readonly appDirs = new Map<string, string>();
+  /** Apps whose tasks ai-space itself contributes (`space`): a workspace sync must not forget them. */
+  private readonly builtin = new Set<string>();
   private readonly inflight = new Map<string, Promise<void>>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private started = false;
@@ -118,13 +120,23 @@ export class Scheduler {
     return [...this.appDirs.keys()].sort();
   }
 
+  /** Sync a manifest ai-space itself owns; `forget` ignores the app from then on. */
+  syncBuiltin(manifest: Manifest, extra: ManifestTask[] = []): SyncSummary {
+    this.builtin.add(manifest.app);
+    return this.syncManifest(manifest, extra);
+  }
+
+  isBuiltin(app: string): boolean {
+    return this.builtin.has(app);
+  }
+
   /**
    * Drop an app whose directory is gone: its manifest tasks become orphaned (kept in
    * the store with their run history) and the per-app sync route stops knowing it.
    */
   forget(app: string): SyncSummary | undefined {
     const dir = this.appDirs.get(app);
-    if (dir === undefined) return undefined;
+    if (dir === undefined || this.builtin.has(app)) return undefined;
     const summary = this.syncManifest({ app, dir, spec: 1, status: "archived", agents: [], widgets: [], tasks: [] });
     this.appDirs.delete(app);
     return summary;

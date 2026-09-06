@@ -223,7 +223,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
     }
   }
   // ai-space's own tasks: the space.db snapshot and the weekly verification of every app's newest snapshot.
-  scheduler.syncManifest(spaceManifest(taskDefaults));
+  scheduler.syncBuiltin(spaceManifest(taskDefaults));
   notify.start();
   await scheduler.start();
   peers.start();

@@ -244,3 +244,16 @@ describe("tick and run", () => {
     expect(k.state.lastError).toBe("kaboom");
   });
 });
+
+describe("built-in apps", () => {
+  test("forget leaves a built-in app's tasks alone", () => {
+    const h = harness();
+    h.s.syncBuiltin(h.manifest([{ name: "backup", schedule: every(60_000), target: cmd("true"), timeoutMs: 1000, enabled: true }], "space"));
+    h.s.syncManifest(h.manifest([{ name: "job", schedule: every(60_000), target: cmd("true"), timeoutMs: 1000, enabled: true }]));
+    expect(h.s.forget("space")).toBeUndefined();
+    expect(h.s.forget("demo")?.orphaned).toEqual(["job"]);
+    expect(h.store.findTask("space", "backup")?.orphaned).toBe(false);
+    expect(h.s.apps()).toEqual(["space"]);
+    expect(h.s.isBuiltin("space")).toBe(true);
+  });
+});

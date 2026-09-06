@@ -204,7 +204,7 @@ src/space/storage/backup/
 How it hooks into what exists:
 
 - `index.ts` `provision()` runs for every manifest before the scheduler syncs it and returns the contributed `backup` task; `Scheduler.syncManifest(manifest, extra)` treats it as a manifest task, so it is keyed `app + "backup"`, orphaned when the app goes, and overridable from the panel like any other.
-- At boot the scheduler syncs a synthetic manifest for `space` with its `backup` and `backup-verify` tasks.
+- At boot the scheduler syncs a synthetic manifest for `space` with its `backup` and `backup-verify` tasks, as a built-in app: a workspace sync (`POST /api/apps/sync`) forgets apps whose directory lost its manifest, and must not forget this one.
 - Every task's command is the absolute bun binary and entry file (`process.execPath`, `import.meta.path`), run in the ai-space checkout with `SPACE_HOME` pinned, so the subprocess finds the same workspace the scheduler uses.
 - `setup` checks for `tar` and `zstd` and mentions the default target in its S3 section.
 
