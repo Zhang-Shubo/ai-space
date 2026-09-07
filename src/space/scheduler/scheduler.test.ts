@@ -245,6 +245,124 @@ describe("tick and run", () => {
   });
 });
 
+describe("events", () => {
+  const manual = { kind: "manual" } as const;
+  const trig = (event: string, over: Partial<{ debounceMs: number; filter: Record<string, string | string[]> }> = {}) => ({ event, ...over });
+
+  test("a trigger-only task has no clock and runs when a matching event is published", async () => {
+    const seen: { name: string; trigger?: string; events?: string[] }[] = [];
+    const h = harness({
+      runner: async (task, ctx) => {
+        seen.push({ name: task.name, trigger: ctx.trigger, events: ctx.events?.map((e) => e.name) });
+        return { status: "ok" };
+      },
+    });
+    h.s.syncManifest(h.manifest([mt("curate", { schedule: manual, triggers: [trig("feed/item.added", { filter: { channel: ["a", "b"] } })] })]));
+    const task = h.store.findTask("demo", "curate")!;
+    expect(task.state.nextRunAt).toBeUndefined();
+    expect(task.triggers).toEqual([{ event: "feed/item.added", filter: { channel: ["a", "b"] } }]);
+
+    expect(h.s.publish({ app: "feed", name: "item.added", data: { channel: "z" } }).matched).toEqual([]);
+    expect(h.s.publish({ app: "other", name: "item.added", data: { channel: "a" } }).matched).toEqual([]);
+    const { event, matched } = h.s.publish({ app: "feed", name: "item.added", data: { channel: "a" } });
+    expect(matched.map((t) => t.name)).toEqual(["curate"]);
+    await h.s.idle();
+    expect(seen).toEqual([{ name: "curate", trigger: "event", events: ["feed/item.added"] }]);
+    const run = h.store.listRuns(task.id)[0]!;
+    expect(run.trigger).toBe("event");
+    expect(run.eventIds).toEqual([event.id]);
+    expect(h.store.getTask(task.id)!.state.pending).toBeUndefined();
+    expect(h.store.getTask(task.id)!.state.nextRunAt).toBeUndefined();
+  });
+
+  test("debounce coalesces a burst into one run after the quiet period", async () => {
+    const h = harness();
+    h.s.syncManifest(h.manifest([mt("t", { schedule: manual, triggers: [trig("feed/*", { debounceMs: 5000 })] })]));
+    h.s.publish({ app: "feed", name: "a" });
+    h.advance(3000);
+    h.s.publish({ app: "feed", name: "b" });
+    await h.s.tick();
+    await h.s.idle();
+    expect(h.calls).toEqual([]);
+    const pending = h.store.findTask("demo", "t")!.state.pending!;
+    expect(pending.eventIds).toHaveLength(2);
+    expect(pending.dueAt).toBe(h.at() + 5000);
+    h.advance(5000);
+    await h.s.tick();
+    await h.s.idle();
+    expect(h.calls).toEqual(["t"]);
+    expect(h.store.listRuns(h.store.findTask("demo", "t")!.id)[0]!.eventIds).toHaveLength(2);
+  });
+
+  test("events during a run queue one more run, and a clock run takes pending events along", async () => {
+    let release: () => void = () => {};
+    let gate = new Promise<void>((r) => (release = r));
+    const runs: { trigger?: string; n: number }[] = [];
+    const h = harness({
+      runner: async (_task, ctx) => {
+        runs.push({ trigger: ctx.trigger, n: ctx.events?.length ?? 0 });
+        await gate;
+        return { status: "ok" };
+      },
+    });
+    // A long debounce: events alone would not start a run before the clock does.
+    h.s.syncManifest(h.manifest([mt("t", { schedule: every(60_000), triggers: [trig("feed/*", { debounceMs: 120_000 })] })]));
+    await h.s.tick(); // first interval run, right away
+    expect(runs).toEqual([{ trigger: "schedule", n: 0 }]);
+    h.s.publish({ app: "feed", name: "a" });
+    h.s.publish({ app: "feed", name: "b" });
+    await h.s.tick();
+    expect(runs).toHaveLength(1); // still running: not launched again
+    release();
+    await h.s.idle();
+    expect(runs).toHaveLength(1); // the events wait for their quiet period
+    h.advance(120_000);
+    gate = new Promise<void>((r) => (release = r));
+    await h.s.tick();
+    expect(runs).toHaveLength(2); // the interval is due too; the run is the clock's and carries both events
+    expect(runs[1]).toEqual({ trigger: "schedule", n: 2 });
+    release();
+    await h.s.idle();
+    expect(h.store.listRuns(h.store.findTask("demo", "t")!.id)[0]).toMatchObject({ trigger: "schedule", eventIds: [expect.any(Number), expect.any(Number)] });
+
+    // Neither due: an event inside its quiet period, the interval half way. Nothing starts.
+    h.s.publish({ app: "feed", name: "c" });
+    h.advance(30_000);
+    await h.s.tick();
+    await h.s.idle();
+    expect(runs).toHaveLength(2);
+    expect(h.store.findTask("demo", "t")!.state.pending?.eventIds).toHaveLength(1);
+  });
+
+  test("disabled and orphaned tasks are not queued; disabling drops pending events", async () => {
+    const h = harness();
+    h.s.syncManifest(h.manifest([mt("t", { schedule: manual, triggers: [trig("feed/*", { debounceMs: 1000 })] })]));
+    const id = h.store.findTask("demo", "t")!.id;
+    h.s.publish({ app: "feed", name: "a" });
+    expect(h.store.getTask(id)!.state.pending?.eventIds).toHaveLength(1);
+    h.s.patchTask(id, { enabled: false });
+    expect(h.store.getTask(id)!.state.pending).toBeUndefined();
+    expect(h.s.publish({ app: "feed", name: "b" }).matched).toEqual([]);
+    h.s.patchTask(id, { enabled: null });
+    h.s.syncManifest(h.manifest([]));
+    expect(h.s.publish({ app: "feed", name: "c" }).matched).toEqual([]);
+    h.advance(2000);
+    await h.s.tick();
+    await h.s.idle();
+    expect(h.calls).toEqual([]);
+  });
+
+  test("manifest sync updates triggers and rejects a task with neither clock nor triggers", () => {
+    const h = harness();
+    h.s.syncManifest(h.manifest([mt("t", { schedule: manual, triggers: [trig("feed/a")] })]));
+    const r = h.s.syncManifest(h.manifest([mt("t", { schedule: manual, triggers: [trig("feed/b")] })]));
+    expect(r.updated).toEqual(["t"]);
+    expect(h.store.findTask("demo", "t")!.triggers).toEqual([{ event: "feed/b" }]);
+    expect(() => h.s.syncManifest(h.manifest([mt("u", { schedule: manual })]))).toThrow(/neither a schedule nor triggers/);
+    expect(() => h.s.addTask({ app: "demo", name: "v", schedule: manual, target: cmd("true"), triggers: [{ event: "bad" }] })).toThrow(/expected <app>\/<event>/);
+  });
+});
+
 describe("built-in apps", () => {
   test("forget leaves a built-in app's tasks alone", () => {
     const h = harness();

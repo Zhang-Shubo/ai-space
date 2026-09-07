@@ -151,6 +151,10 @@ const en = {
   "tasks.errorN": "error ×{n}",
   "tasks.skipped": "skipped",
   "tasks.neverRan": "never ran",
+  "tasks.on": "on {event}",
+  "tasks.pending": "{n} event(s) queued",
+  "tasks.manualRun": "manual",
+  "tasks.eventRun": "{n} event(s)",
 
   "time.justNow": "just now",
   "time.minAgo": "{n} min ago",
@@ -171,6 +175,7 @@ const en = {
   "time.dh": "{d}d {h}h",
   "time.every": "every {duration}",
   "time.onceAt": "once at {date}",
+  "time.manual": "no schedule",
 };
 
 export type Key = keyof typeof en;
@@ -309,6 +314,10 @@ const zh: Record<Key, string> = {
   "tasks.errorN": "失败 ×{n}",
   "tasks.skipped": "已跳过",
   "tasks.neverRan": "从未运行",
+  "tasks.on": "事件 {event}",
+  "tasks.pending": "{n} 个事件待处理",
+  "tasks.manualRun": "手动",
+  "tasks.eventRun": "{n} 个事件",
 
   "time.justNow": "刚刚",
   "time.minAgo": "{n} 分钟前",
@@ -329,6 +338,7 @@ const zh: Record<Key, string> = {
   "time.dh": "{d} 天 {h} 小时",
   "time.every": "每 {duration}",
   "time.onceAt": "{date} 运行一次",
+  "time.manual": "无时间表",
 };
 
 export const MESSAGES: Record<Lang, Record<Key, string>> = { en, zh };

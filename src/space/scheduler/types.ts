@@ -7,6 +7,8 @@
  */
 
 export type Schedule =
+  /** No clock at all: the task runs on events (`triggers`) or by hand. */
+  | { kind: "manual" }
   /** One-shot at an absolute ISO timestamp. */
   | { kind: "at"; at: string }
   /** Fixed interval; runs at anchorMs + k * everyMs. */
@@ -37,6 +39,35 @@ export type Target =
 
 export type RunStatus = "ok" | "error" | "skipped";
 
+/** What started a run: the clock, `POST /api/tasks/:id/run`, or matching events. */
+export type RunTrigger = "schedule" | "manual" | "event";
+
+/**
+ * An event trigger: the task runs when an app publishes a matching event.
+ * `event` is the qualified name `<app>/<event>`; `<app>/*` matches every event of
+ * that app. `filter` compares top-level `data` fields by string equality (a list
+ * means any of). `debounceMs` is the quiet period after the last matching event
+ * before the task runs; events arriving meanwhile join the same run.
+ */
+export type EventTrigger = {
+  event: string;
+  filter?: Record<string, string | string[]>;
+  debounceMs?: number;
+};
+
+/** An event as apps publish it (`POST /api/events`), stored for delivery and history. */
+export type SpaceEvent = {
+  id: number;
+  /** Qualified name `<app>/<event>`. */
+  name: string;
+  /** The publishing app. */
+  app: string;
+  data: Record<string, unknown>;
+  at: number;
+};
+
+export type EventInput = { app: string; name: string; data?: Record<string, unknown> };
+
 export type TaskState = {
   nextRunAt?: number;
   runningAt?: number;
@@ -46,6 +77,8 @@ export type TaskState = {
   lastDurationMs?: number;
   /** Consecutive failures, drives backoff; reset to 0 on success. */
   consecutiveErrors: number;
+  /** Events waiting for a run: delivered together once `dueAt` has passed and the task is free. */
+  pending?: { eventIds: number[]; dueAt: number };
 };
 
 export type TaskSource = "manifest" | "api";
@@ -77,6 +110,8 @@ export type Task = {
   /** Manifest task that disappeared from its manifest; kept for history, never runs. */
   orphaned: boolean;
   notify?: TaskNotify;
+  /** Event triggers; a task may have these, a schedule, or both. */
+  triggers?: EventTrigger[];
   state: TaskState;
   createdAt: number;
   updatedAt: number;
@@ -91,6 +126,9 @@ export type Run = {
   error?: string;
   /** Truncated stdout / response body for debugging. */
   output?: string;
+  trigger: RunTrigger;
+  /** Ids of the events delivered with this run (any trigger). */
+  eventIds?: number[];
 };
 
 export type TaskCreate = {
@@ -103,6 +141,7 @@ export type TaskCreate = {
   enabled?: boolean;
   source?: TaskSource;
   notify?: TaskNotify;
+  triggers?: EventTrigger[];
 };
 
 export type TaskPatch = {

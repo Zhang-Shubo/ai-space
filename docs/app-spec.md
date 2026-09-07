@@ -220,9 +220,13 @@ tasks:
     schedule: "0 3 * * *"
     run:
       command: "bun scripts/export.ts"
+  - name: index
+    triggers: [{ event: feed/item.added, filter: { kind: video }, debounce: 5m }]
+    run:
+      http: { method: POST, url: "http://127.0.0.1:${PORT}/jobs/index" }
 ```
 
-Exactly one of `at` / `every` / `schedule` and exactly one of `run.http` / `run.command` / `run.agent` per task. Commands and agent runs execute in the app directory with the app's environment (`.env` and `space.env` merged). Real cron expressions live only here, never in a machine's crontab.
+At most one of `at` / `every` / `schedule`, and/or `triggers` (events other apps publish with `POST /api/events`; a task with only triggers has no clock), and exactly one of `run.http` / `run.command` / `run.agent` per task. Commands and agent runs execute in the app directory with the app's environment (`.env` and `space.env` merged). Real cron expressions live only here, never in a machine's crontab.
 
 ### `storage`
 
@@ -336,8 +340,9 @@ Environment, always:
 | `SPACE_APP_DIR` | Absolute path of the app directory. |
 | `SPACE_APP_DATA_DIR` | Absolute path of `<workspace>/data/<name>/`. |
 | `SPACE_API_URL` | Base URL of the Space API, loopback. |
-| `SPACE_APP_TOKEN` | Per-app bearer token for the Space API; identifies the app on `POST /api/notify`. Written to `space.env`. |
+| `SPACE_APP_TOKEN` | Per-app bearer token for the Space API; identifies the app on `POST /api/notify` and `POST /api/events`. Written to `space.env`. |
 | `PORT` | For services: the declared port. |
+| `SPACE_TRIGGER` | For task runs: `schedule`, `manual` or `event`. With events, `SPACE_EVENT` (the latest) and `SPACE_EVENTS` (all) as JSON. |
 
 Environment, when declared: `DATABASE_URL` (or `DATABASE_URL_<NAME>` for several), `BLOB_URL`, `S3_*`.
 
@@ -348,6 +353,7 @@ API, for apps and their agents:
 | `GET /api/apps` | Every app with its status, agents and widgets. |
 | `POST /api/apps`, `PATCH`/`DELETE /api/apps/:app` | Create a manifest-only app, hide an app, delete a manifest-only app. |
 | `GET /api/tasks`, `POST /api/tasks/:id/run` | Inspect and trigger the app's own tasks. |
+| `POST /api/events`, `GET /api/events` | Publish an event for other apps' tasks (`{ name, data }`, stored as `<app>/<name>`); read recent events. |
 | `GET /api/widgets` | Every widget's latest payload (used by the panel). |
 | `POST /api/agents/:app/:agent/chat` | One chat turn, streamed as server-sent events; `sessionId` continues a session. |
 | `POST /api/notify`, `GET /api/notifications?app` | Send a notification; read the app's own delivery history. |
@@ -408,7 +414,7 @@ notify:
 | Area | Status |
 | --- | --- |
 | Workspace layout, app discovery, `space.env` | Implemented (`src/space/workspace.ts`, `src/space/storage/`) |
-| `tasks` | Implemented (`src/space/scheduler/`) |
+| `tasks`, `triggers`, `/api/events` | Implemented (`src/space/scheduler/`) |
 | `storage` databases and blob hand-over | Implemented; managed blob API pending |
 | `backup` | Implemented (`src/space/storage/backup/`): daily snapshots, retention, weekly verify, `restore` |
 | `notify`, `/api/notify`, `SPACE_APP_TOKEN` | Implemented (`src/space/notify/`, `skills/notify/`) |

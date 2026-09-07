@@ -57,7 +57,7 @@ describe("Store", () => {
     const s = new Store(":memory:");
     s.saveTask(sampleTask());
     for (let i = 0; i < 520; i++) {
-      s.addRun({ taskId: "t1", startedAt: i, endedAt: i + 1, status: i % 2 ? "ok" : "error", error: i % 2 ? undefined : "e" });
+      s.addRun({ taskId: "t1", startedAt: i, endedAt: i + 1, status: i % 2 ? "ok" : "error", error: i % 2 ? undefined : "e", trigger: "schedule" });
     }
     const runs = s.listRuns("t1", 1000);
     expect(runs).toHaveLength(500);
@@ -69,11 +69,32 @@ describe("Store", () => {
   test("deleteTask removes the task and its runs", () => {
     const s = new Store(":memory:");
     s.saveTask(sampleTask());
-    s.addRun({ taskId: "t1", startedAt: 1, endedAt: 2, status: "ok" });
+    s.addRun({ taskId: "t1", startedAt: 1, endedAt: 2, status: "ok", trigger: "manual" });
     expect(s.deleteTask("t1")).toBe(true);
     expect(s.getTask("t1")).toBeUndefined();
     expect(s.listRuns("t1")).toHaveLength(0);
     expect(s.deleteTask("t1")).toBe(false);
+    s.close();
+  });
+
+  test("events are stored, fetched by id in order and pruned; runs keep trigger and event ids", () => {
+    const s = new Store(":memory:");
+    s.saveTask({ ...sampleTask(), triggers: [{ event: "feed/item.added", debounceMs: 5000 }] });
+    expect(s.getTask("t1")?.triggers).toEqual([{ event: "feed/item.added", debounceMs: 5000 }]);
+    const a = s.addEvent({ app: "feed", name: "item.added", data: { id: 1 } }, 100);
+    const b = s.addEvent({ app: "feed", name: "item.added", data: { id: 2 } }, 200);
+    const c = s.addEvent({ app: "other", name: "ping" }, 300);
+    expect(a.name).toBe("feed/item.added");
+    expect(s.getEvents([b.id, a.id]).map((e) => e.data)).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(s.getEvents([]).length).toBe(0);
+    expect(s.listEvents().map((e) => e.id)).toEqual([c.id, b.id, a.id]);
+    expect(s.listEvents({ name: "feed/item.added", limit: 1 }).map((e) => e.id)).toEqual([b.id]);
+    expect(s.listEvents({ app: "other" }).map((e) => e.id)).toEqual([c.id]);
+    const run = s.addRun({ taskId: "t1", startedAt: 1, endedAt: 2, status: "ok", trigger: "event", eventIds: [a.id, b.id] });
+    expect(s.listRuns("t1")[0]).toMatchObject({ id: run.id, trigger: "event", eventIds: [a.id, b.id] });
+    for (let i = 0; i < 2100; i++) s.addEvent({ app: "feed", name: "x" }, i);
+    expect(s.listEvents({ limit: 5000 })).toHaveLength(2000);
+    expect(s.getEvents([a.id])).toHaveLength(0);
     s.close();
   });
 });

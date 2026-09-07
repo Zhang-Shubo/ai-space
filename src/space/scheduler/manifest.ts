@@ -1,16 +1,18 @@
 import { basename, join } from "node:path";
+import { assertTriggerEvent } from "./events.ts";
 import { assertSchedule, parseDuration } from "./schedule.ts";
-import { DEFAULT_TIMEOUT_MS, TASK_NOTIFY_EVENTS, type Schedule, type Target, type TaskNotify, type TaskNotifyEvent } from "./types.ts";
+import { DEFAULT_TIMEOUT_MS, type EventTrigger, TASK_NOTIFY_EVENTS, type Schedule, type Target, type TaskNotify, type TaskNotifyEvent } from "./types.ts";
 
 /**
  * App manifest (`space.yaml`) parsing.
  *
  * The top level (identity, `service`, `agents`, `widgets`) and the `tasks`
  * section are interpreted here; `storage`, `notify` and `skills` are passed
- * through raw for their services (`backup` likewise for the backup module). Each task declares one schedule form
- * (`at` / `every` / `schedule` for cron) and one `run` target (`http` /
- * `command` / `agent`). Parsing is strict: an unknown key, a wrong type or a
- * bad value rejects the whole app so nothing partially applies.
+ * through raw for their services (`backup` likewise for the backup module). Each task declares when it runs
+ * (one schedule form, `at` / `every` / `schedule` for cron, and/or event
+ * `triggers`) and one `run` target (`http` / `command` / `agent`). Parsing is
+ * strict: an unknown key, a wrong type or a bad value rejects the whole app so
+ * nothing partially applies.
  */
 
 export const MANIFEST_FILE = "space.yaml";
@@ -35,6 +37,7 @@ export type ManifestTask = {
   timeoutMs: number;
   enabled: boolean;
   notify?: TaskNotify;
+  triggers?: EventTrigger[];
 };
 
 /** The app's own long-running process. */
@@ -324,14 +327,49 @@ function parseTask(raw: unknown, index: number): ManifestTask {
   if (!NAME_RE.test(name)) throw new Error(`${where}: invalid or missing name`);
   const ctx = `task "${name}"`;
 
-  const schedule = parseSchedule(raw, ctx);
+  const triggers = raw.triggers === undefined ? undefined : parseTriggers(raw.triggers, ctx);
+  const schedule = parseSchedule(raw, ctx, triggers !== undefined);
   assertSchedule(schedule);
   const target = parseTarget(raw.run, ctx);
   const timeoutMs = raw.timeout === undefined ? DEFAULT_TIMEOUT_MS : parseDuration(raw.timeout as string | number);
   const enabled = raw.enabled === undefined ? true : raw.enabled === true;
   const description = typeof raw.description === "string" ? raw.description : undefined;
   const notify = raw.notify === undefined ? undefined : parseTaskNotify(raw.notify, ctx);
-  return { name, description, schedule, target, timeoutMs, enabled, ...(notify ? { notify } : {}) };
+  return { name, description, schedule, target, timeoutMs, enabled, ...(notify ? { notify } : {}), ...(triggers ? { triggers } : {}) };
+}
+
+/**
+ * `triggers: [{ event: other-app/thing.happened, filter: { kind: [a, b] }, debounce: 5m }]`;
+ * a bare string is `{ event }`. The key is `triggers` rather than `on` for the
+ * same reason notify uses `when`: YAML 1.1 reads a bare `on` as true.
+ */
+export function parseTriggers(raw: unknown, ctx: string): EventTrigger[] {
+  const list = Array.isArray(raw) ? raw : [raw];
+  if (list.length === 0) throw new Error(`${ctx}: triggers must name at least one event`);
+  return list.map((item, i) => {
+    const where = `${ctx}: triggers[${i}]`;
+    const t = typeof item === "string" ? { event: item } : item;
+    if (!isRecord(t)) throw new Error(`${where} must be an event name or a mapping with event / filter / debounce`);
+    for (const key of Object.keys(t)) if (!["event", "filter", "debounce"].includes(key)) throw new Error(`${where} has unknown key "${key}"`);
+    if (typeof t.event !== "string" || !t.event.trim()) throw new Error(`${where}: event is required`);
+    const event = t.event.trim();
+    assertTriggerEvent(event);
+    const out: EventTrigger = { event };
+    if (t.filter !== undefined) {
+      if (!isRecord(t.filter)) throw new Error(`${where}: filter must map data fields to a value or a list of values`);
+      const filter: Record<string, string | string[]> = {};
+      for (const [k, v] of Object.entries(t.filter)) {
+        if (Array.isArray(v)) {
+          if (!v.length || !v.every(isScalar)) throw new Error(`${where}: filter.${k} must be a scalar or a non-empty list of scalars`);
+          filter[k] = v.map(String);
+        } else if (isScalar(v)) filter[k] = String(v);
+        else throw new Error(`${where}: filter.${k} must be a scalar or a non-empty list of scalars`);
+      }
+      out.filter = filter;
+    }
+    if (t.debounce !== undefined) out.debounceMs = parseDuration(t.debounce as string | number);
+    return out;
+  });
 }
 
 /**
@@ -354,9 +392,10 @@ export function parseTaskNotify(raw: unknown, ctx: string): TaskNotify {
   return { when: events, channel: raw.channel };
 }
 
-function parseSchedule(raw: Record<string, unknown>, ctx: string): Schedule {
+function parseSchedule(raw: Record<string, unknown>, ctx: string, hasTriggers: boolean): Schedule {
   const forms = ["at", "every", "schedule"].filter((k) => raw[k] !== undefined);
-  if (forms.length !== 1) throw new Error(`${ctx}: declare exactly one of at / every / schedule`);
+  if (forms.length === 0 && hasTriggers) return { kind: "manual" };
+  if (forms.length !== 1) throw new Error(`${ctx}: declare exactly one of at / every / schedule${hasTriggers ? " (or none, with triggers)" : ", or triggers"}`);
   if (raw.at !== undefined) {
     if (typeof raw.at !== "string") throw new Error(`${ctx}: at must be an ISO timestamp string`);
     return { kind: "at", at: raw.at };
@@ -417,6 +456,10 @@ function stringList(v: unknown, what: string): string[] {
   if (v === undefined) return [];
   if (!Array.isArray(v) || !v.every((x) => typeof x === "string" && x.trim())) throw new Error(`${what} must be a list of strings`);
   return v.map((x: string) => x.trim());
+}
+
+function isScalar(v: unknown): v is string | number | boolean {
+  return typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

@@ -128,8 +128,11 @@ export const dateTime = (iso: string | number, lang: Lang = "en") => new Date(is
 
 // ---------------------------------------------------------------- scheduler
 
-export type Schedule = { kind: "at"; at: string } | { kind: "every"; everyMs: number } | { kind: "cron"; expr: string; tz?: string };
+export type Schedule = { kind: "manual" } | { kind: "at"; at: string } | { kind: "every"; everyMs: number } | { kind: "cron"; expr: string; tz?: string };
 export type RunStatus = "ok" | "error" | "skipped";
+export type RunTrigger = "schedule" | "manual" | "event";
+/** An event trigger as the manifest declares it: `<app>/<event>` or `<app>/*`, optional data filter and quiet period. */
+export type TriggerInfo = { event: string; filter?: Record<string, string | string[]>; debounceMs?: number };
 
 /** One task as `GET /api/tasks` shows it: effective values plus state, timestamps as ISO strings. */
 export type TaskInfo = {
@@ -143,6 +146,7 @@ export type TaskInfo = {
   schedule: Schedule;
   target: { kind: "http" | "command" | "agent" };
   timeoutMs: number;
+  triggers: TriggerInfo[];
   overrides: { enabled?: boolean; schedule?: Schedule };
   state: {
     nextRunAt?: string;
@@ -152,11 +156,13 @@ export type TaskInfo = {
     lastError?: string;
     lastDurationMs?: number;
     consecutiveErrors: number;
+    /** Events waiting for the next run, and when it is due. */
+    pending?: { events: number; dueAt?: string };
   };
 };
 
 /** One run as `GET /api/tasks/:id/runs` shows it (epoch milliseconds). */
-export type RunInfo = { id: number; taskId: string; startedAt: number; endedAt: number; status: RunStatus; error?: string; output?: string };
+export type RunInfo = { id: number; taskId: string; startedAt: number; endedAt: number; status: RunStatus; error?: string; output?: string; trigger: RunTrigger; eventIds?: number[] };
 
 export const fmtDuration = (ms: number, lang: Lang = "en") => {
   const t = (key: Parameters<typeof translate>[1], vars: Record<string, number>) => translate(lang, key, vars);
@@ -172,6 +178,7 @@ export const fmtDuration = (ms: number, lang: Lang = "en") => {
 };
 
 export const scheduleText = (s: Schedule, lang: Lang = "en") => {
+  if (s.kind === "manual") return translate(lang, "time.manual");
   if (s.kind === "every") return translate(lang, "time.every", { duration: fmtDuration(s.everyMs, lang) });
   if (s.kind === "cron") return s.tz ? `${s.expr} (${s.tz})` : s.expr;
   return translate(lang, "time.onceAt", { date: dateTime(s.at, lang) });

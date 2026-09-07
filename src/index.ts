@@ -264,6 +264,7 @@ export async function boot(ws: Workspace, config: Config, env: Record<string, st
           registry.remove(app);
           console.log(`[space] ${app}: directory gone, deregistered`);
         },
+        appForToken: (t) => storage.appForToken(t),
       }),
       ...createStorageRoutes({ storage, token: config.apiToken }),
       ...createBackupRoutes({

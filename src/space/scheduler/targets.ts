@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import type { RunStatus, Target } from "./types.ts";
+import { eventEnv, eventPayload, eventPromptSection } from "./events.ts";
+import type { RunStatus, RunTrigger, SpaceEvent, Target } from "./types.ts";
 
 /**
  * Target runners: turn a task's target into one execution with a timeout.
@@ -7,6 +8,11 @@ import type { RunStatus, Target } from "./types.ts";
  * Every runner returns a RunResult and never throws. `output` is truncated so
  * it can be stored with the run record. Command and agent targets run inside
  * the app directory with the app's `.env` merged into the environment.
+ *
+ * A run started by events carries them: http targets get `event` / `events`
+ * merged into a JSON body (and `x-space-trigger` always), commands and agents
+ * get `SPACE_TRIGGER`, `SPACE_EVENT`, `SPACE_EVENTS`, and an agent prompt ends
+ * with an "Events" section.
  */
 
 export type RunResult = {
@@ -21,6 +27,10 @@ export type RunContext = {
   /** Extra variables for command/agent targets, layered over the app's `.env` (storage's space.env). */
   env?: Record<string, string>;
   signal: AbortSignal;
+  /** Why the run started; default schedule. */
+  trigger?: RunTrigger;
+  /** Events delivered with this run, oldest first. */
+  events?: SpaceEvent[];
 };
 
 const MAX_OUTPUT_CHARS = 4000;
@@ -54,11 +64,17 @@ export async function runTarget(target: Target, ctx: RunContext): Promise<RunRes
 // ---------------------------------------------------------------- http
 
 async function runHttp(target: Extract<Target, { kind: "http" }>, ctx: RunContext): Promise<RunResult> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { "x-space-trigger": ctx.trigger ?? "schedule" };
   for (const [k, v] of Object.entries(target.headers ?? {})) headers[k] = interpolate(v);
   let body: string | undefined;
-  if (target.body !== undefined && target.method !== "GET") {
-    body = typeof target.body === "string" ? interpolate(target.body) : JSON.stringify(target.body);
+  const events = ctx.events ?? [];
+  // Events ride along in the JSON body. A string body is the app's own format and is sent as is.
+  const merged =
+    events.length && target.method !== "GET" && (target.body === undefined || (typeof target.body === "object" && target.body !== null && !Array.isArray(target.body)))
+      ? { ...((target.body as Record<string, unknown> | undefined) ?? {}), event: eventPayload(events[events.length - 1]!), events: events.map(eventPayload) }
+      : target.body;
+  if (merged !== undefined && target.method !== "GET") {
+    body = typeof merged === "string" ? interpolate(merged) : JSON.stringify(merged);
     if (!Object.keys(headers).some((k) => k.toLowerCase() === "content-type")) {
       headers["content-type"] = "application/json";
     }
@@ -90,7 +106,7 @@ function parseVerdict(raw: string): { status: RunStatus; error?: string } | unde
 
 async function runCommand(target: Extract<Target, { kind: "command" }>, ctx: RunContext): Promise<RunResult> {
   const cwd = target.cwd ?? ctx.appDir ?? process.cwd();
-  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(ctx.env ?? {}), ...(target.env ?? {}) };
+  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(ctx.env ?? {}), ...(target.env ?? {}), ...eventEnv(ctx.trigger ?? "schedule", ctx.events ?? []) };
   // ${VAR} placeholders resolve from the scheduler environment, same as http targets,
   // so machine-specific paths (a venv python, a token) stay out of the manifest.
   return spawnAndWait(["sh", "-c", interpolate(target.command)], { cwd, env, signal: ctx.signal });
@@ -101,8 +117,8 @@ async function runAgent(target: Extract<Target, { kind: "agent" }>, ctx: RunCont
   const promptPath = target.prompt.startsWith("/") ? target.prompt : join(cwd, target.prompt);
   const promptFile = Bun.file(promptPath);
   if (!(await promptFile.exists())) return { status: "error", error: `prompt file not found: ${promptPath}` };
-  const prompt = await promptFile.text();
-  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(ctx.env ?? {}) };
+  const prompt = (await promptFile.text()) + (ctx.events?.length ? eventPromptSection(ctx.events) : "");
+  const env = { ...process.env, ...(await loadAppEnv(cwd)), ...(ctx.env ?? {}), ...eventEnv(ctx.trigger ?? "schedule", ctx.events ?? []) };
   const cmd = agentCommand(target.runtime, target.model);
   return spawnAndWait(cmd, { cwd, env, signal: ctx.signal, stdin: prompt });
 }

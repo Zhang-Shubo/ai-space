@@ -42,7 +42,15 @@ Local configuration goes in `~/.ai-space/.env` (see `.env.example`); process env
 
 ## Deployment
 
-User-level systemd, no sudo. On the target machine, with Bun installed under `~/.bun`:
+One line on a fresh machine, as the user that will own ai-space (installs Bun and Claude Code, clones into `~/.ai-space/core`, installs the unit, then runs the interactive setup on the terminal):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/ai-space/main/deploy/bootstrap.sh | bash
+```
+
+For a private repository, host `deploy/bootstrap.sh` on a URL of your own and pass a token: `curl -fsSL https://<your-domain>/install.sh | AI_SPACE_GIT_TOKEN=<token> bash`. See [docs/install.md](docs/install.md).
+
+By hand: user-level systemd, no sudo. On the target machine, with Bun installed under `~/.bun`:
 
 ```bash
 ssh <host> "git init --bare ~/ai-space.git"
@@ -59,7 +67,7 @@ See [docs/app-spec.md](docs/app-spec.md) for the app specification (what an app 
 
 ## Services
 
-- **Scheduler** (`src/space/scheduler/`) - scheduled tasks for apps: `at` / `every` / `cron` schedules, `http` / `command` / `agent` targets, declared in each app's `space.yaml` and managed through `/api/tasks`. See [docs/scheduler.md](docs/scheduler.md).
+- **Scheduler** (`src/space/scheduler/`) - scheduled and event-driven tasks for apps: `at` / `every` / `cron` schedules, event `triggers` fed by `POST /api/events` (debounced, coalesced, delivered as the run's payload), `http` / `command` / `agent` targets, declared in each app's `space.yaml` and managed through `/api/tasks`. See [docs/scheduler.md](docs/scheduler.md).
 - **Storage** (`src/space/storage/`) - per-app databases on SQLite or PostgreSQL and a per-app blob store on the filesystem or any S3-compatible bucket, declared in `space.yaml`, provisioned on sync and handed over through `<workspace>/data/<app>/space.env` (`DATABASE_URL`, `BLOB_URL`, `S3_*`). The managed blob API from the design is not implemented yet. See [docs/storage.md](docs/storage.md).
 - **Backup** (`src/space/storage/backup/`) - every app's data directory snapshotted daily to an S3 bucket (SQLite via `VACUUM INTO`, state files, one `tar.zst` per app with a sidecar manifest), counted retention, a weekly verification task that opens the newest snapshot, and `restore` into a directory or in place. See [docs/backup.md](docs/backup.md).
 - **Notify** (`src/space/notify/`) - one-way notifications to chat apps (Telegram, Discord, Slack, Feishu, DingTalk, WeCom, Bark, ntfy, generic webhook). Channels are configured once in the workspace `.env` as `SPACE_NOTIFY_<NAME>` URLs; apps declare which they may use in `space.yaml` and send one `POST /api/notify`. Deliveries are queued, rate limited, retried and recorded; the scheduler reports failing tasks through it. See [docs/notify.md](docs/notify.md).

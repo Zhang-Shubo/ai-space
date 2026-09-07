@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import { type Manifest, type ManifestTask, loadManifest } from "./manifest.ts";
+import { eventPayload, parseEventInput } from "./events.ts";
+import { type Manifest, type ManifestTask, loadManifest, parseTriggers } from "./manifest.ts";
 import { Scheduler, type SyncSummary } from "./scheduler.ts";
 import type { Store } from "./store.ts";
-import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEnabled, effectiveSchedule } from "./types.ts";
+import { type Schedule, type SpaceEvent, type Task, type TaskCreate, type TaskPatch, effectiveEnabled, effectiveSchedule } from "./types.ts";
 
 /**
  * HTTP surface for the scheduler, shaped as a Bun.serve `routes` table.
@@ -17,8 +18,11 @@ import { type Schedule, type Task, type TaskCreate, type TaskPatch, effectiveEna
  *   GET    /api/tasks/:id/runs?limit  run history, newest first
  *   POST   /api/apps/sync             discover every app directory and re-read each space.yaml; forget the ones that left
  *   POST   /api/apps/:app/sync        re-read the app's space.yaml
+ *   POST   /api/events                publish { name, data? } as the app behind the bearer token (operator: plus app)
+ *   GET    /api/events?limit&name&app recent events, newest first
  *
- * Mutating routes require `Authorization: Bearer <token>` when a token is configured.
+ * Mutating routes require `Authorization: Bearer <token>` when a token is configured;
+ * `POST /api/events` also accepts an app's own `SPACE_APP_TOKEN`.
  */
 
 export type ApiOptions = {
@@ -32,6 +36,8 @@ export type ApiOptions = {
   discover?: () => Promise<string[]>;
   /** Called when a workspace sync finds a registered app's directory gone (panel deregistration). */
   onGone?: (app: string) => Promise<void>;
+  /** Resolve an app's own `SPACE_APP_TOKEN` to its name, for `POST /api/events`. */
+  appForToken?: (token: string) => Promise<string | undefined>;
 };
 
 type Handler = (req: Request & { params: Record<string, string> }) => Response | Promise<Response>;
@@ -51,6 +57,24 @@ export function createRoutes(opts: ApiOptions): Routes {
         return error(400, (e as Error).message ?? String(e));
       }
     };
+
+  const bearer = (req: Request): string => req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+
+  /** Who publishes: the app behind an app token, or the operator (then `app` comes from the body). */
+  const publisher = async (req: Request, body: Record<string, unknown>): Promise<string> => {
+    const presented = bearer(req);
+    const fromBody = (): string => {
+      if (typeof body.app !== "string" || !APP_RE.test(body.app)) throw new Error("app is required when publishing with the operator token");
+      return body.app;
+    };
+    if (token && presented === token) return fromBody();
+    if (presented && opts.appForToken) {
+      const app = await opts.appForToken(presented);
+      if (app) return app;
+    }
+    if (!token && !presented) return fromBody();
+    throw new Unauthorized();
+  };
 
   const withTask = (req: { params: Record<string, string> }): Task => {
     const task = store.getTask(req.params.id ?? "");
@@ -143,6 +167,26 @@ export function createRoutes(opts: ApiOptions): Routes {
       }),
     },
 
+    "/api/events": {
+      GET: (req) => {
+        const q = new URL(req.url).searchParams;
+        const limit = Number(q.get("limit") ?? 50);
+        return json({ ok: true, events: store.listEvents({ limit: Number.isFinite(limit) ? limit : 50, name: q.get("name") ?? undefined, app: q.get("app") ?? undefined }).map(eventView) });
+      },
+      POST: async (req) => {
+        try {
+          const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+          if (!body || typeof body !== "object") return error(400, "body must be a JSON object");
+          const app = await publisher(req, body);
+          const { event, matched } = scheduler.publish(parseEventInput(app, body));
+          return json({ ok: true, event: eventView(event), matched: matched.map((t) => `${t.app}/${t.name}`) }, 202);
+        } catch (e) {
+          if (e instanceof Unauthorized) return error(401, "unauthorized");
+          return error(400, (e as Error).message ?? String(e));
+        }
+      },
+    },
+
     "/api/apps/:app/sync": {
       POST: guard(async (req) => {
         const app = req.params.app ?? "";
@@ -160,6 +204,9 @@ export function createRoutes(opts: ApiOptions): Routes {
 // ---------------------------------------------------------------- helpers
 
 class NotFound extends Error {}
+class Unauthorized extends Error {}
+
+const APP_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
 function safe(fn: () => Response): Response {
   try {
@@ -194,6 +241,7 @@ export function view(task: Task) {
     target: task.target,
     timeoutMs: task.timeoutMs,
     notify: task.notify,
+    triggers: task.triggers ?? [],
     overrides: task.overrides,
     base: { enabled: task.enabled, schedule: task.schedule },
     state: {
@@ -201,6 +249,7 @@ export function view(task: Task) {
       nextRunAt: iso(task.state.nextRunAt),
       runningAt: iso(task.state.runningAt),
       lastRunAt: iso(task.state.lastRunAt),
+      pending: task.state.pending ? { events: task.state.pending.eventIds.length, dueAt: iso(task.state.pending.dueAt) } : undefined,
     },
     createdAt: iso(task.createdAt),
     updatedAt: iso(task.updatedAt),
@@ -211,10 +260,16 @@ function iso(ms?: number): string | undefined {
   return ms === undefined ? undefined : new Date(ms).toISOString();
 }
 
+function eventView(e: SpaceEvent) {
+  return { id: e.id, ...eventPayload(e) };
+}
+
 function parseSchedule(raw: unknown): Schedule {
   if (typeof raw !== "object" || raw === null) throw new Error("schedule must be an object");
   const s = raw as Record<string, unknown>;
   switch (s.kind) {
+    case "manual":
+      return { kind: "manual" };
     case "at":
       if (typeof s.at !== "string") throw new Error("schedule.at must be a string");
       return { kind: "at", at: s.at };
@@ -226,7 +281,7 @@ function parseSchedule(raw: unknown): Schedule {
       if (s.tz !== undefined && typeof s.tz !== "string") throw new Error("schedule.tz must be a string");
       return { kind: "cron", expr: s.expr, ...(s.tz ? { tz: s.tz } : {}) };
     default:
-      throw new Error("schedule.kind must be at, every or cron");
+      throw new Error("schedule.kind must be at, every, cron or manual");
   }
 }
 
@@ -236,12 +291,15 @@ function parseCreate(body: Partial<TaskCreate>): TaskCreate {
   if (typeof body.target !== "object" || body.target === null || !("kind" in body.target)) throw new Error("target is required");
   const target = body.target;
   if (target.kind !== "http" && target.kind !== "command" && target.kind !== "agent") throw new Error("target.kind must be http, command or agent");
+  // Triggers use the manifest shape ({ event, filter, debounce }); a task with triggers may omit the schedule.
+  const triggers = body.triggers === undefined ? undefined : parseTriggers(body.triggers, `task ${body.name}`);
   return {
     app: body.app,
     name: body.name,
     description: typeof body.description === "string" ? body.description : undefined,
-    schedule: parseSchedule(body.schedule),
+    schedule: body.schedule === undefined && triggers?.length ? { kind: "manual" } : parseSchedule(body.schedule),
     target,
+    ...(triggers?.length ? { triggers } : {}),
     timeoutMs: typeof body.timeoutMs === "number" ? body.timeoutMs : undefined,
     enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     source: "api",

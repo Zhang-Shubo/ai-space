@@ -24,7 +24,11 @@ beforeAll(async () => {
   scheduler = new Scheduler({ store, log: () => {} });
   scheduler.syncManifest(await loadManifest(appDir));
   discovered.push(appDir);
-  server = Bun.serve({ port: 0, hostname: "127.0.0.1", routes: createRoutes({ scheduler, store, token: "t0k", discover: async () => [...discovered] }) });
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    routes: createRoutes({ scheduler, store, token: "t0k", discover: async () => [...discovered], appForToken: async (t) => (t === "feed-token" ? "feed" : undefined) }),
+  });
   base = `http://127.0.0.1:${server.port}`;
 });
 
@@ -80,6 +84,46 @@ describe("scheduler api", () => {
 
     expect((await call(`/api/tasks/${id}`, { method: "DELETE", headers: auth })).status).toBe(200);
     expect((await call(`/api/tasks/${id}`)).status).toBe(404);
+  });
+
+  test("events: publish as an app or as the operator, deliver to a trigger-only task, list", async () => {
+    const created = await call("/api/tasks", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ app: "demo", name: "on-item", triggers: [{ event: "feed/item.added", filter: { kind: "video" } }], target: { kind: "command", command: "true" } }),
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.task.schedule).toEqual({ kind: "manual" });
+    expect(created.body.task.triggers).toEqual([{ event: "feed/item.added", filter: { kind: "video" } }]);
+    expect(created.body.task.state.nextRunAt).toBeUndefined();
+
+    // App token: the app comes from the token; a body `app` is ignored.
+    const appHeaders = { authorization: "Bearer feed-token", "content-type": "application/json" };
+    const pub = await call("/api/events", { method: "POST", headers: appHeaders, body: JSON.stringify({ name: "item.added", data: { kind: "video", id: 9 } }) });
+    expect(pub.status).toBe(202);
+    expect(pub.body.event).toMatchObject({ name: "feed/item.added", app: "feed", data: { kind: "video", id: 9 } });
+    expect(pub.body.matched).toEqual(["demo/on-item"]);
+    await scheduler.idle();
+    const runs = await call(`/api/tasks/${created.body.task.id}/runs`);
+    expect(runs.body.runs[0]).toMatchObject({ status: "ok", trigger: "event", eventIds: [pub.body.event.id] });
+
+    // Operator token: `app` is required in the body.
+    expect((await call("/api/events", { method: "POST", headers: auth, body: JSON.stringify({ name: "x" }) })).body.error).toMatch(/app is required/);
+    const op = await call("/api/events", { method: "POST", headers: auth, body: JSON.stringify({ app: "feed", name: "item.added", data: { kind: "text" } }) });
+    expect(op.status).toBe(202);
+    expect(op.body.matched).toEqual([]);
+    // Unknown token, missing token, bad names.
+    expect((await call("/api/events", { method: "POST", headers: { authorization: "Bearer nope", "content-type": "application/json" }, body: JSON.stringify({ name: "x" }) })).status).toBe(401);
+    expect((await call("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x" }) })).status).toBe(401);
+    expect((await call("/api/events", { method: "POST", headers: appHeaders, body: JSON.stringify({ name: "a/b" }) })).status).toBe(400);
+    expect((await call("/api/events", { method: "POST", headers: appHeaders, body: "nope" })).status).toBe(400);
+
+    const list = await call("/api/events?limit=10");
+    expect(list.status).toBe(200);
+    expect(list.body.events.map((e: { data: { kind: string } }) => e.data.kind)).toEqual(["text", "video"]);
+    expect((await call("/api/events?name=feed/item.added&limit=1")).body.events).toHaveLength(1);
+    expect((await call("/api/events?app=nobody")).body.events).toEqual([]);
+    await call(`/api/tasks/${created.body.task.id}`, { method: "DELETE", headers: auth });
   });
 
   test("bad create bodies are 400 with a message", async () => {

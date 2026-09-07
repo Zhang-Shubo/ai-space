@@ -1,11 +1,16 @@
+import { assertTriggerEvent, matchingTriggers } from "./events.ts";
 import type { Manifest, ManifestTask } from "./manifest.ts";
 import { assertSchedule, nextRunAt } from "./schedule.ts";
 import type { Store } from "./store.ts";
-import { type RunResult, runTarget } from "./targets.ts";
+import { type RunContext, type RunResult, runTarget } from "./targets.ts";
 import {
   DEFAULT_TIMEOUT_MS,
+  type EventInput,
+  type EventTrigger,
   type Run,
+  type RunTrigger,
   type Schedule,
+  type SpaceEvent,
   type Task,
   type TaskCreate,
   type TaskPatch,
@@ -29,13 +34,19 @@ import {
  * - a tick with nothing due only fills in missing nextRunAt values, it never
  *   advances a past-due one (that would silently skip a run);
  * - stale running markers are cleared on start and after STUCK_RUN_MS.
+ *
+ * Events: `publish` stores the event and queues it on every enabled task whose
+ * triggers match (`state.pending`, due after the trigger's debounce). A task is
+ * due when its clock or its pending events say so; whichever launch comes first
+ * takes the pending events along, so a burst of events, or events arriving
+ * while the task runs, produce one more run, never one per event.
  */
 
 const MAX_TIMER_DELAY_MS = 60_000;
 const STUCK_RUN_MS = 2 * 3_600_000;
 const ERROR_BACKOFF_MS = [30_000, 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
 
-export type Runner = (task: Task, ctx: { appDir?: string; env?: Record<string, string>; signal: AbortSignal }) => Promise<RunResult>;
+export type Runner = (task: Task, ctx: RunContext) => Promise<RunResult>;
 
 export type SchedulerOptions = {
   store: Store;
@@ -163,10 +174,13 @@ export class Scheduler {
       }
 
       const due = tasks
-        .filter((t) => effectiveEnabled(t) && t.state.runningAt === undefined && t.state.nextRunAt !== undefined && t.state.nextRunAt <= now)
-        .sort((a, b) => (a.state.nextRunAt ?? 0) - (b.state.nextRunAt ?? 0));
+        .filter((t) => effectiveEnabled(t) && t.state.runningAt === undefined && dueAt(t) <= now)
+        .sort((a, b) => dueAt(a) - dueAt(b));
       const slots = this.maxConcurrency - this.inflight.size;
-      for (const task of due.slice(0, Math.max(0, slots))) this.launch(task, "due");
+      for (const task of due.slice(0, Math.max(0, slots))) {
+        const byClock = task.state.nextRunAt !== undefined && task.state.nextRunAt <= now;
+        this.launch(task, byClock ? "schedule" : "event");
+      }
     } finally {
       this.ticking = false;
       this.armTimer();
@@ -180,8 +194,10 @@ export class Scheduler {
     const now = this.now();
     let nextAt: number | undefined;
     for (const t of this.store.listTasks()) {
-      if (!effectiveEnabled(t) || t.state.runningAt !== undefined || t.state.nextRunAt === undefined) continue;
-      if (nextAt === undefined || t.state.nextRunAt < nextAt) nextAt = t.state.nextRunAt;
+      if (!effectiveEnabled(t) || t.state.runningAt !== undefined) continue;
+      const at = dueAt(t);
+      if (at === Number.POSITIVE_INFINITY) continue;
+      if (nextAt === undefined || at < nextAt) nextAt = at;
     }
     if (nextAt === undefined) return;
     const delay = Math.min(Math.max(nextAt - now, 0), MAX_TIMER_DELAY_MS);
@@ -192,8 +208,9 @@ export class Scheduler {
   /** Give an enabled task a nextRunAt if it has none. Never moves an existing one. */
   private fillNextRun(task: Task, now: number): boolean {
     if (!effectiveEnabled(task)) {
-      if (task.state.nextRunAt !== undefined) {
+      if (task.state.nextRunAt !== undefined || task.state.pending) {
         task.state.nextRunAt = undefined;
+        task.state.pending = undefined;
         return true;
       }
       return false;
@@ -210,22 +227,25 @@ export class Scheduler {
 
   // ---------------------------------------------------------------- execution
 
-  private launch(task: Task, reason: string): void {
+  /** Start one run. Pending events, if any, go along whatever the trigger, and are cleared. */
+  private launch(task: Task, trigger: RunTrigger): void {
     const startedAt = this.now();
+    const events = this.store.getEvents(task.state.pending?.eventIds ?? []);
+    task.state.pending = undefined;
     task.state.runningAt = startedAt;
     task.state.lastError = undefined;
     this.store.saveState(task.id, task.state, startedAt);
-    this.log(`task ${task.app}/${task.name}: started (${reason})`);
+    this.log(`task ${task.app}/${task.name}: started (${trigger}${events.length ? `, ${events.length} event(s)` : ""})`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), task.timeoutMs);
     const env = this.envFor ? this.envFor(task.app) : Promise.resolve(undefined);
     const p = env
-      .then((extra) => this.runner(task, { appDir: this.appDirs.get(task.app), env: extra, signal: controller.signal }))
+      .then((extra) => this.runner(task, { appDir: this.appDirs.get(task.app), env: extra, signal: controller.signal, trigger, events }))
       .catch((e): RunResult => ({ status: "error", error: (e as Error).message ?? String(e) }))
       .then((result) => {
         clearTimeout(timeout);
-        this.finish(task.id, startedAt, result);
+        this.finish(task.id, startedAt, result, trigger, events);
       })
       .finally(() => {
         this.inflight.delete(task.id);
@@ -234,7 +254,7 @@ export class Scheduler {
     this.inflight.set(task.id, p);
   }
 
-  private finish(taskId: string, startedAt: number, result: RunResult): void {
+  private finish(taskId: string, startedAt: number, result: RunResult, trigger: RunTrigger, events: SpaceEvent[]): void {
     const endedAt = this.now();
     const task = this.store.getTask(taskId);
     if (!task) return; // deleted while running
@@ -257,7 +277,16 @@ export class Scheduler {
     }
 
     this.store.saveState(task.id, s, endedAt);
-    const run = this.store.addRun({ taskId: task.id, startedAt, endedAt, status: result.status, error: result.error, output: result.output });
+    const run = this.store.addRun({
+      taskId: task.id,
+      startedAt,
+      endedAt,
+      status: result.status,
+      error: result.error,
+      output: result.output,
+      trigger,
+      ...(events.length ? { eventIds: events.map((e) => e.id) } : {}),
+    });
     const summary = result.status === "ok" ? "ok" : `${result.status}: ${result.error ?? ""}`;
     this.log(`task ${task.app}/${task.name}: ${summary} in ${s.lastDurationMs}ms`);
     if (this.onFinish) {
@@ -278,10 +307,41 @@ export class Scheduler {
     return true;
   }
 
+  // ---------------------------------------------------------------- events
+
+  /**
+   * Publish an event: store it, queue it on every enabled task with a matching
+   * trigger, and tick. Returns the stored event and the tasks it reached. A
+   * disabled or orphaned task is not queued; the event stays in the history.
+   */
+  publish(input: EventInput): { event: SpaceEvent; matched: Task[] } {
+    const now = this.now();
+    const event = this.store.addEvent(input, now);
+    const matched: Task[] = [];
+    for (const task of this.store.listTasks()) {
+      if (!effectiveEnabled(task)) continue;
+      const hits = matchingTriggers(task.triggers, event);
+      if (!hits.length) continue;
+      const debounce = Math.max(...hits.map((t) => t.debounceMs ?? 0));
+      const pending = task.state.pending ?? { eventIds: [], dueAt: now };
+      pending.eventIds.push(event.id);
+      // The quiet period restarts with every event; an earlier, shorter due time never moves later than that.
+      pending.dueAt = Math.max(pending.dueAt, now + debounce);
+      task.state.pending = pending;
+      this.store.saveState(task.id, task.state, now);
+      matched.push(task);
+    }
+    this.log(`event ${event.name} #${event.id}: ${matched.length ? matched.map((t) => `${t.app}/${t.name}`).join(", ") : "no task"}`);
+    if (matched.length) void this.tick().catch((e) => this.log(`tick failed: ${String(e)}`));
+    return { event, matched };
+  }
+
   // ---------------------------------------------------------------- CRUD
 
   addTask(input: TaskCreate): Task {
     assertSchedule(input.schedule);
+    assertTriggers(input.triggers);
+    if (input.schedule.kind === "manual" && !input.triggers?.length) throw new Error(`task ${input.app}/${input.name} has neither a schedule nor triggers`);
     if (this.store.findTask(input.app, input.name)) throw new Error(`task ${input.app}/${input.name} already exists`);
     const now = this.now();
     const task: Task = {
@@ -297,6 +357,7 @@ export class Scheduler {
       source: input.source ?? "api",
       orphaned: false,
       ...(input.notify ? { notify: input.notify } : {}),
+      ...(input.triggers?.length ? { triggers: input.triggers } : {}),
       state: { consecutiveErrors: 0 },
       createdAt: now,
       updatedAt: now,
@@ -369,11 +430,11 @@ export class Scheduler {
     const seen = new Set<string>();
 
     for (const mt of [...manifest.tasks, ...extra]) {
-      if (seen.has(mt.name)) throw new Error(`: task  is declared twice`);
+      if (seen.has(mt.name)) throw new Error(`${manifest.app}: task "${mt.name}" is declared twice`);
       seen.add(mt.name);
       const existing = this.store.findTask(manifest.app, mt.name);
       if (!existing) {
-        this.addTask({ app: manifest.app, name: mt.name, description: mt.description, schedule: mt.schedule, target: mt.target, timeoutMs: mt.timeoutMs, enabled: mt.enabled, source: "manifest", notify: mt.notify });
+        this.addTask({ app: manifest.app, name: mt.name, description: mt.description, schedule: mt.schedule, target: mt.target, timeoutMs: mt.timeoutMs, enabled: mt.enabled, source: "manifest", notify: mt.notify, triggers: mt.triggers });
         summary.created.push(mt.name);
         continue;
       }
@@ -386,12 +447,14 @@ export class Scheduler {
         existing.enabled !== mt.enabled ||
         existing.timeoutMs !== mt.timeoutMs ||
         JSON.stringify(existing.target) !== JSON.stringify(mt.target) ||
-        JSON.stringify(existing.notify ?? null) !== JSON.stringify(mt.notify ?? null);
+        JSON.stringify(existing.notify ?? null) !== JSON.stringify(mt.notify ?? null) ||
+        JSON.stringify(existing.triggers ?? null) !== JSON.stringify(mt.triggers?.length ? mt.triggers : null);
       if (!changed) continue;
       existing.description = mt.description;
       existing.target = mt.target;
       existing.timeoutMs = mt.timeoutMs;
       existing.notify = mt.notify;
+      existing.triggers = mt.triggers?.length ? mt.triggers : undefined;
       existing.enabled = mt.enabled;
       existing.source = "manifest";
       existing.orphaned = false;
@@ -409,6 +472,7 @@ export class Scheduler {
       if (t.app !== manifest.app || t.source !== "manifest" || seen.has(t.name) || t.orphaned) continue;
       t.orphaned = true;
       t.state.nextRunAt = undefined;
+      t.state.pending = undefined;
       t.updatedAt = now;
       this.store.saveTask(t);
       summary.orphaned.push(t.name);
@@ -417,6 +481,18 @@ export class Scheduler {
     this.log(`synced ${manifest.app}: +${summary.created.length} ~${summary.updated.length} -${summary.orphaned.length}`);
     this.armTimer();
     return summary;
+  }
+}
+
+/** When the task next wants to run: its clock or its pending events, whichever is earlier. */
+function dueAt(task: Task): number {
+  return Math.min(task.state.nextRunAt ?? Number.POSITIVE_INFINITY, task.state.pending?.dueAt ?? Number.POSITIVE_INFINITY);
+}
+
+function assertTriggers(triggers: EventTrigger[] | undefined): void {
+  for (const t of triggers ?? []) {
+    assertTriggerEvent(t.event);
+    if (t.debounceMs !== undefined && (!Number.isFinite(t.debounceMs) || t.debounceMs < 0)) throw new Error(`invalid debounce: ${t.debounceMs}`);
   }
 }
 

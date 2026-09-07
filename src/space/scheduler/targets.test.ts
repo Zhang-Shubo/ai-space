@@ -18,6 +18,7 @@ beforeAll(async () => {
         const body = await req.text();
         return Response.json({ got: body, auth: req.headers.get("authorization") });
       }
+      if (url.pathname === "/echo") return Response.json({ body: await req.text(), trigger: req.headers.get("x-space-trigger") });
       if (url.pathname === "/fail") return new Response("nope", { status: 500 });
       if (url.pathname === "/verdict") return Response.json({ status: "skipped", error: "already running" });
       if (url.pathname === "/slow") {
@@ -114,6 +115,48 @@ describe("agent target", () => {
     const r = await runTarget({ kind: "agent", runtime: "claude", prompt: "nope.md" }, ctx());
     expect(r.status).toBe("error");
     expect(r.error).toMatch(/prompt file not found/);
+  });
+});
+
+describe("events in a run", () => {
+  const events = [
+    { id: 1, name: "feed/a", app: "feed", data: { i: 1 }, at: 0 },
+    { id: 2, name: "feed/b", app: "feed", data: { i: 2 }, at: 1000 },
+  ];
+
+  test("http: events merge into a JSON body, the trigger rides in a header", async () => {
+    const r = await runTarget({ kind: "http", method: "POST", url: `${base}/echo`, body: { job: "x" } }, { ...ctx(), trigger: "event", events });
+    const got = JSON.parse(r.output!);
+    expect(got.trigger).toBe("event");
+    const body = JSON.parse(got.body);
+    expect(body.job).toBe("x");
+    expect(body.event).toEqual({ name: "feed/b", app: "feed", at: "1970-01-01T00:00:01.000Z", data: { i: 2 } });
+    expect(body.events).toHaveLength(2);
+    // No body declared: the events are the body. A string body is left alone. GET sends none.
+    expect(JSON.parse(JSON.parse((await runTarget({ kind: "http", method: "POST", url: `${base}/echo` }, { ...ctx(), events })).output!).body).events).toHaveLength(2);
+    expect(JSON.parse((await runTarget({ kind: "http", method: "POST", url: `${base}/echo`, body: "raw" }, { ...ctx(), events })).output!).body).toBe("raw");
+    const get = JSON.parse((await runTarget({ kind: "http", method: "GET", url: `${base}/echo` }, { ...ctx(), events })).output!);
+    expect(get.body).toBe("");
+    expect(get.trigger).toBe("schedule");
+  });
+
+  test("command: SPACE_TRIGGER, SPACE_EVENT and SPACE_EVENTS", async () => {
+    const r = await runTarget({ kind: "command", command: 'echo "$SPACE_TRIGGER|$SPACE_EVENT|$SPACE_EVENTS"' }, { ...ctx(), trigger: "event", events });
+    expect(r.status).toBe("ok");
+    const [trigger, last, all] = r.output!.split("|");
+    expect(trigger).toBe("event");
+    expect(JSON.parse(last!).name).toBe("feed/b");
+    expect(JSON.parse(all!)).toHaveLength(2);
+    expect((await runTarget({ kind: "command", command: 'echo "$SPACE_TRIGGER|$SPACE_EVENT"' }, ctx())).output).toBe("schedule|");
+  });
+
+  test("agent: the prompt ends with an Events section", async () => {
+    process.env.SPACE_AGENT_BIN_CLAUDE = "cat";
+    const r = await runTarget({ kind: "agent", runtime: "claude", prompt: "prompt.md" }, { ...ctx(), trigger: "event", events });
+    delete process.env.SPACE_AGENT_BIN_CLAUDE;
+    expect(r.output).toStartWith("hello agent");
+    expect(r.output).toContain("## Events");
+    expect(r.output).toContain('"name": "feed/a"');
   });
 });
 

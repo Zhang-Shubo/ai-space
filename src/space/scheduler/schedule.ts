@@ -7,6 +7,8 @@ import type { Schedule } from "./types.ts";
  */
 export function nextRunAt(schedule: Schedule, nowMs: number): number | undefined {
   switch (schedule.kind) {
+    case "manual":
+      return undefined;
     case "at": {
       const atMs = Date.parse(schedule.at);
       if (!Number.isFinite(atMs)) return undefined;
@@ -37,6 +39,8 @@ export function nextRunAt(schedule: Schedule, nowMs: number): number | undefined
 /** Validate a schedule without computing anything; throws with a readable message. */
 export function assertSchedule(schedule: Schedule): void {
   switch (schedule.kind) {
+    case "manual":
+      return;
     case "at":
       if (!Number.isFinite(Date.parse(schedule.at))) throw new Error(`invalid at timestamp: ${schedule.at}`);
       return;

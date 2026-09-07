@@ -132,6 +132,28 @@ widgets:
     expect(() => parseManifest(`${base}i18n:\n  zh:\n    widgets: { recent: { description: x } }\n`, "/d")).toThrow(/unknown key "description"/);
   });
 
+  test("parses event triggers; a task may have triggers, a schedule, or both", () => {
+    const m = parseManifest(
+      "name: demo\ntasks:\n  - name: a\n    triggers: feed/item.added\n    run: { command: x }\n  - name: b\n    every: 1h\n    triggers:\n      - feed/*\n      - { event: other/done, filter: { channel: [x, y], n: 3 }, debounce: 5m }\n    run: { command: x }\n",
+      "/apps/demo",
+    );
+    expect(m.tasks[0]).toMatchObject({ name: "a", schedule: { kind: "manual" }, triggers: [{ event: "feed/item.added" }] });
+    expect(m.tasks[1]).toMatchObject({
+      name: "b",
+      schedule: { kind: "every", everyMs: 3_600_000 },
+      triggers: [{ event: "feed/*" }, { event: "other/done", filter: { channel: ["x", "y"], n: "3" }, debounceMs: 300_000 }],
+    });
+    expect("triggers" in parseManifest("name: demo\ntasks:\n  - name: a\n    every: 1h\n    run: { command: x }\n", "/d").tasks[0]!).toBe(false);
+    const bad = (tasks: string) => () => parseManifest(`name: demo\ntasks:\n  - name: a\n${tasks}    run: { command: x }\n`, "/d");
+    expect(bad("")).toThrow(/exactly one of at \/ every \/ schedule, or triggers/);
+    expect(bad("    triggers: []\n")).toThrow(/at least one event/);
+    expect(bad("    triggers: item.added\n")).toThrow(/expected <app>\/<event>/);
+    expect(bad("    triggers: [{ event: feed/a, on: x }]\n")).toThrow(/unknown key/);
+    expect(bad("    triggers: [{ event: feed/a, filter: { k: {} } }]\n")).toThrow(/filter.k must be/);
+    expect(bad("    triggers: [{ event: feed/a, debounce: soon }]\n")).toThrow(/invalid duration/);
+    expect(bad("    at: 2030-01-01T00:00:00Z\n    every: 1h\n    triggers: feed/a\n")).toThrow(/or none, with triggers/);
+  });
+
   test("applies defaults on an empty manifest", () => {
     const m = parseManifest("", "/apps/bare");
     expect(m).toMatchObject({ app: "bare", spec: 1, status: "active", agents: [], widgets: [], tasks: [] });

@@ -251,7 +251,7 @@ Nothing here is inbound, but three choices keep the door open:
 - `providerId` on every delivery lets a later stage edit a sent message or thread a reply under it.
 - The `agents` section of the app spec is the natural target for an inbound message: a channel gets a `route: my-app/assistant` and messages become chat turns. That stage is where the panel's chat route and this service meet.
 
-What two-way will need that this design does not provide: per-sender identity and allow-lists, message state (which user, which thread), and a way for an app to receive events. Those are separate design work.
+What two-way will need that this design does not provide: per-sender identity and allow-lists, and message state (which user, which thread). App-to-app events already exist on the scheduler side ([event triggers](scheduler.md#event-triggers)); an inbound chat message would become one of those events.
 
 ## Failure modes considered
 

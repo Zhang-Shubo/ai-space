@@ -36,7 +36,7 @@ function task(overrides: Partial<Task> = {}, state: Partial<TaskState> = {}): Ta
   };
 }
 
-const run = (status: Run["status"], error?: string): Run => ({ id: 1, taskId: "t1", startedAt: 1000, endedAt: 3500, status, error });
+const run = (status: Run["status"], error?: string): Run => ({ id: 1, taskId: "t1", startedAt: 1000, endedAt: 3500, status, error, trigger: "schedule" });
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("workspace-level task reports", () => {

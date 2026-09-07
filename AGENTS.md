@@ -33,7 +33,7 @@ English is the default language of this repository. Write code identifiers, comm
 
 - `src/` - source code. Entry point is `src/index.ts` (boots Space services and serves the Space API). Tests sit next to the code they test and are named `*.test.ts`.
 - `src/space/` - Space layer services shared by every app. One directory per service. `workspace.ts` defines the `~/.ai-space` layout, creates it, discovers apps and loads the workspace `.env`.
-- `src/space/scheduler/` - scheduled tasks: `types.ts` (data model), `schedule.ts` (at/every/cron next-run math), `store.ts` (bun:sqlite), `targets.ts` (http/command/agent runners), `manifest.ts` (`space.yaml` parsing), `scheduler.ts` (engine), `api.ts` (HTTP routes). Design notes in `docs/scheduler.md`.
+- `src/space/scheduler/` - scheduled and event-driven tasks: `types.ts` (data model), `schedule.ts` (at/every/cron next-run math), `events.ts` (event names, trigger matching, run payload), `store.ts` (bun:sqlite: tasks, runs, events), `targets.ts` (http/command/agent runners), `manifest.ts` (`space.yaml` parsing), `scheduler.ts` (engine: ticks, publish, pending delivery), `api.ts` (HTTP routes). Design notes in `docs/scheduler.md`.
 - `src/space/storage/` - per-app storage: `types.ts` (data model), `db.ts` (open by URL on Bun's `SQL`, migrations), `spec.ts` (`storage:` manifest section), `storage.ts` (database and blob store provisioning, inventory, `space.env`), `api.ts` (HTTP routes). Design notes in `docs/storage.md`.
 - `src/space/storage/backup/` - backups: `types.ts` (spec, snapshot manifest, keys), `spec.ts` (`backup:` manifest section, per-app minute), `snapshot.ts` (staging: `VACUUM INTO`, file copy with excludes), `archive.ts` (tar + zstd, hashing), `target.ts` (file and S3 backends), `catalog.ts` (sidecars in the target), `store.ts` (`backups` index in space.db), `retention.ts` (counted keep), `run.ts` (one backup run + prune), `verify.ts`, `restore.ts`, `tasks.ts` (the scheduler tasks), `api.ts` (HTTP routes), `cli.ts` (`backup`, `backup-verify`, `backups`, `restore` subcommands). Design notes in `docs/backup.md`.
 - `src/space/notify/` - chat notifications: `types.ts` (data model), `channels.ts` (`SPACE_NOTIFY_*` URLs and per-kind limits), `render.ts` (text composition, escaping, splitting), `transports.ts` (one sender per chat app), `spec.ts` (`notify:` manifest section and request validation), `store.ts` (bun:sqlite), `engine.ts` (outbox, workers, retries, dedup, caps), `api.ts` (HTTP routes), `tasks.ts` (scheduler hook), `testing.ts` (scripted fetch for tests). Design notes in `docs/notify.md`.
@@ -49,7 +49,7 @@ English is the default language of this repository. Write code identifiers, comm
 - `tsconfig.json` - TypeScript configuration (strict, bundler mode, noEmit).
 - `AGENTS.md` - this file, the agent working guide.
 - `CLAUDE.md` - Bun usage conventions.
-- `deploy/` - `ai-space.service` (user-level systemd unit), `install.sh` (installs the unit on a machine), `post-receive` (bare-repo hook for git-push deploys).
+- `deploy/` - `ai-space.service` (user-level systemd unit), `install.sh` (installs the unit on a machine), `post-receive` (bare-repo hook for git-push deploys), `bootstrap.sh` (the `curl | bash` one-line install: runtimes, clone, install.sh, setup).
 - `.env.example` - configuration template for `~/.ai-space/.env`.
 - `.gitignore` - global ignore rules.
 

@@ -4,7 +4,7 @@ import { type Key, type Lang, localized, useLang } from "./i18n.ts";
 
 // Tasks window (a floating panel): a read-only view of the scheduler, grouped by app.
 // - Reads `GET /api/tasks` when opened and every 30 s while open; the list is small (tens of tasks).
-// - A row shows the effective schedule, the next run, the last outcome; clicking it loads run history.
+// - A row shows the effective schedule and event triggers, the next run, the last outcome; clicking it loads run history.
 // - App titles and icons come from `GET /api/apps?all=1` so headless and hidden apps still get a name.
 // Nothing here mutates: the mutating task routes need the operator token, which the browser never holds.
 
@@ -60,6 +60,8 @@ function Runs({ taskId }: { taskId: string }) {
             <span className="run-time" title={dateTime(r.startedAt, lang)}>
               {relTime(r.startedAt, lang)}
             </span>
+            {r.trigger === "manual" && <span className="task-badge">{t("tasks.manualRun")}</span>}
+            {r.eventIds?.length ? <span className="task-badge">{t("tasks.eventRun", { n: r.eventIds.length })}</span> : null}
             <span className="run-dur">{fmtDuration(r.endedAt - r.startedAt, lang)}</span>
           </div>
           {r.error && <div className="run-err">{r.error}</div>}
@@ -90,13 +92,21 @@ function TaskRow({ t, open, onToggle }: { t: TaskInfo; open: boolean; onToggle: 
                 {b}
               </span>
             ))}
-            <span className="task-sched">{scheduleText(t.schedule, lang)}</span>
+            <span className="task-sched">
+              {t.triggers.map((g) => (
+                <span key={g.event} className="task-on" title={[g.filter && JSON.stringify(g.filter), g.debounceMs && fmtDuration(g.debounceMs, lang)].filter(Boolean).join(" · ") || undefined}>
+                  {tr("tasks.on", { event: g.event })}
+                </span>
+              ))}
+              {(t.schedule.kind !== "manual" || !t.triggers.length) && <span>{scheduleText(t.schedule, lang)}</span>}
+            </span>
           </span>
           <span className="task-meta">
             <span>{tr(st.key, { n: st.n ?? 0 })}</span>
             {t.state.lastDurationMs !== undefined && <span>{fmtDuration(t.state.lastDurationMs, lang)}</span>}
             {last && <span title={t.state.lastRunAt && dateTime(t.state.lastRunAt, lang)}>{last}</span>}
             {next && <span title={t.state.nextRunAt && dateTime(t.state.nextRunAt, lang)}>{tr("tasks.next", { time: next })}</span>}
+            {t.state.pending && <span title={t.state.pending.dueAt && dateTime(t.state.pending.dueAt, lang)}>{tr("tasks.pending", { n: t.state.pending.events })}</span>}
             <span className="task-kind">{t.target.kind}</span>
           </span>
         </span>

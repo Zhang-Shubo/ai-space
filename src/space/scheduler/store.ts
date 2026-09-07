@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
-import type { Run, RunStatus, Task, TaskState } from "./types.ts";
+import type { EventInput, Run, RunStatus, RunTrigger, SpaceEvent, Task, TaskState } from "./types.ts";
 
 /**
- * SQLite persistence for tasks and their run history.
+ * SQLite persistence for tasks, their run history and the events apps publish.
  *
  * Tasks are stored as a few indexed columns plus JSON blobs for the parts that
  * vary by kind (schedule, target, overrides, state). Migrations follow the
@@ -37,11 +37,22 @@ CREATE TABLE IF NOT EXISTS runs (
   output      TEXT
 );
 CREATE INDEX IF NOT EXISTS runs_task_started ON runs(task_id, started_at DESC);
+CREATE TABLE IF NOT EXISTS events (
+  id     INTEGER PRIMARY KEY AUTOINCREMENT,
+  name   TEXT NOT NULL,
+  app    TEXT NOT NULL,
+  data   TEXT NOT NULL,
+  at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_at ON events(at DESC);
 `;
 
 /** Columns added after the initial schema; applied on open if missing. */
 const ADDED_COLUMNS: { table: string; column: string; ddl: string }[] = [
   { table: "tasks", column: "notify", ddl: "TEXT" },
+  { table: "tasks", column: "triggers", ddl: "TEXT" },
+  { table: "runs", column: "trigger", ddl: "TEXT" },
+  { table: "runs", column: "events", ddl: "TEXT" },
 ];
 
 type TaskRow = {
@@ -57,6 +68,7 @@ type TaskRow = {
   source: string;
   orphaned: number;
   notify: string | null;
+  triggers: string | null;
   state: string;
   created_at: number;
   updated_at: number;
@@ -70,9 +82,15 @@ type RunRow = {
   status: string;
   error: string | null;
   output: string | null;
+  trigger: string | null;
+  events: string | null;
 };
 
+type EventRow = { id: number; name: string; app: string; data: string; at: number };
+
 const MAX_RUNS_PER_TASK = 500;
+/** Events kept for history and late delivery; older rows are dropped on insert. */
+const MAX_EVENTS = 2000;
 
 export class Store {
   readonly db: Database;
@@ -121,16 +139,17 @@ export class Store {
   saveTask(task: Task): void {
     this.db
       .query(
-        `INSERT INTO tasks (id, app, name, description, schedule, target, timeout_ms, enabled, overrides, source, orphaned, notify, state, created_at, updated_at)
-         VALUES ($id, $app, $name, $description, $schedule, $target, $timeout_ms, $enabled, $overrides, $source, $orphaned, $notify, $state, $created_at, $updated_at)
+        `INSERT INTO tasks (id, app, name, description, schedule, target, timeout_ms, enabled, overrides, source, orphaned, notify, triggers, state, created_at, updated_at)
+         VALUES ($id, $app, $name, $description, $schedule, $target, $timeout_ms, $enabled, $overrides, $source, $orphaned, $notify, $triggers, $state, $created_at, $updated_at)
          ON CONFLICT(id) DO UPDATE SET
            app = excluded.app, name = excluded.name, description = excluded.description,
            schedule = excluded.schedule, target = excluded.target, timeout_ms = excluded.timeout_ms,
            enabled = excluded.enabled, overrides = excluded.overrides, source = excluded.source,
-           orphaned = excluded.orphaned, notify = excluded.notify, state = excluded.state, updated_at = excluded.updated_at`,
+           orphaned = excluded.orphaned, notify = excluded.notify, triggers = excluded.triggers, state = excluded.state, updated_at = excluded.updated_at`,
       )
       .run({
         $notify: task.notify ? JSON.stringify(task.notify) : null,
+        $triggers: task.triggers?.length ? JSON.stringify(task.triggers) : null,
         $id: task.id,
         $app: task.app,
         $name: task.name,
@@ -165,8 +184,8 @@ export class Store {
 
   addRun(run: Omit<Run, "id">): Run {
     const r = this.db
-      .query("INSERT INTO runs (task_id, started_at, ended_at, status, error, output) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(run.taskId, run.startedAt, run.endedAt, run.status, run.error ?? null, run.output ?? null);
+      .query("INSERT INTO runs (task_id, started_at, ended_at, status, error, output, trigger, events) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(run.taskId, run.startedAt, run.endedAt, run.status, run.error ?? null, run.output ?? null, run.trigger, run.eventIds?.length ? JSON.stringify(run.eventIds) : null);
     this.db
       .query(
         `DELETE FROM runs WHERE task_id = ? AND id NOT IN (
@@ -190,8 +209,52 @@ export class Store {
         status: r.status as RunStatus,
         error: r.error ?? undefined,
         output: r.output ?? undefined,
+        // Runs recorded before triggers existed were started by the clock.
+        trigger: (r.trigger as RunTrigger | null) ?? "schedule",
+        ...(r.events ? { eventIds: JSON.parse(r.events) as number[] } : {}),
       }));
   }
+
+  // ---------------------------------------------------------------- events
+
+  addEvent(input: EventInput, at: number): SpaceEvent {
+    const name = `${input.app}/${input.name}`;
+    const data = input.data ?? {};
+    const r = this.db.query("INSERT INTO events (name, app, data, at) VALUES (?, ?, ?, ?)").run(name, input.app, JSON.stringify(data), at);
+    this.db.query("DELETE FROM events WHERE id <= (SELECT MAX(id) FROM events) - ?").run(MAX_EVENTS);
+    return { id: Number(r.lastInsertRowid), name, app: input.app, data, at };
+  }
+
+  /** The events with these ids, oldest first; ids already pruned are silently missing. */
+  getEvents(ids: number[]): SpaceEvent[] {
+    if (!ids.length) return [];
+    const marks = ids.map(() => "?").join(", ");
+    return this.db
+      .query<EventRow, number[]>(`SELECT * FROM events WHERE id IN (${marks}) ORDER BY id`)
+      .all(...ids)
+      .map(rowToEvent);
+  }
+
+  /** Newest first, optionally one qualified name or one app's events. */
+  listEvents(opts: { limit?: number; name?: string; app?: string } = {}): SpaceEvent[] {
+    const limit = Math.max(1, Math.min(opts.limit ?? 50, MAX_EVENTS));
+    const where: string[] = [];
+    const args: (string | number)[] = [];
+    if (opts.name) {
+      where.push("name = ?");
+      args.push(opts.name);
+    }
+    if (opts.app) {
+      where.push("app = ?");
+      args.push(opts.app);
+    }
+    const sql = `SELECT * FROM events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ?`;
+    return this.db.query<EventRow, (string | number)[]>(sql).all(...args, limit).map(rowToEvent);
+  }
+}
+
+function rowToEvent(r: EventRow): SpaceEvent {
+  return { id: r.id, name: r.name, app: r.app, data: JSON.parse(r.data), at: r.at };
 }
 
 function rowToTask(r: TaskRow): Task {
@@ -209,6 +272,7 @@ function rowToTask(r: TaskRow): Task {
     source: r.source as Task["source"],
     orphaned: r.orphaned === 1,
     ...(r.notify ? { notify: JSON.parse(r.notify) } : {}),
+    ...(r.triggers ? { triggers: JSON.parse(r.triggers) } : {}),
     state: { consecutiveErrors: 0, ...state },
     createdAt: r.created_at,
     updatedAt: r.updated_at,
