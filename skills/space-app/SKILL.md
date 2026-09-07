@@ -70,10 +70,10 @@ To remove one: `curl -sS -X DELETE "$API/api/apps/<name>"`. This is the only kin
 
 ## 3. Create a code app
 
-1. **Directory and template.** Create the project directory where the operator keeps projects (ask if unknown; never inside the ai-space checkout) and copy `templates/` from this skill into it: `space.yaml`, `README.md`, `AGENTS.md`, `env.example` (rename to `.env.example`), `gitignore` (rename to `.gitignore`), `icon.svg`, `src/index.ts`, `agents/assistant.md`, `deploy/app.service`, `deploy.sh`. Replace every `my-app` / `My App` / `8710` with the real name, title and port. Delete the sections the app does not need (`agents`, `widgets`, `tasks`, `storage`, `notify`); an empty section is worse than none.
+1. **Directory and template.** Create the project directory where the operator keeps projects (ask if unknown; never inside the ai-space checkout) and copy `templates/` from this skill into it: `space.yaml`, `README.md`, `AGENTS.md`, `env.example` (rename to `.env.example`), `gitignore` (rename to `.gitignore`), `icon.svg`, `src/index.ts`, `agents/assistant.md`, `agents/assistant.svg`, `deploy/app.service`, `deploy.sh`. Replace every `my-app` / `My App` / `8710` with the real name, title and port. Delete the sections the app does not need (`agents`, `widgets`, `tasks`, `storage`, `notify`); an empty section is worse than none.
 2. **Service contract** (only if the app has a service): read `PORT`, bind `127.0.0.1` and nothing else, answer `GET /healthz` with 200, log to stdout, exit on `SIGTERM` within 10 seconds. The template does all of this; keep it when you replace the handler.
 3. **Widget** (optional): `GET <source>` returns `{ ok: true, items: [{ text, url?, time? }] }`, at most twenty items, and `{ ok: false, error }` on failure. A path `source` needs a `service`; without one give a full URL.
-4. **Agent** (optional): a prompt file per agent under `agents/`. Write the prompt self-contained (the app's `AGENTS.md` and description are appended automatically); keep `tools` read-only unless the operator wants writes, and make the prompt ask before any write; use `Bash(cmd *)` patterns, never bare `Bash`.
+4. **Agent** (optional): a prompt file per agent under `agents/`. Write the prompt self-contained (the app's `AGENTS.md` and description are appended automatically); keep `tools` read-only unless the operator wants writes, and make the prompt ask before any write; use `Bash(cmd *)` patterns, never bare `Bash`. **Every agent gets its own `avatar`** (`agents/<name>.svg`, 64x64 viewBox rounded square in the app's colours with a glyph that says what the agent does, or a single emoji); without one the panel falls back to the app icon and the agent is indistinguishable from the app. Check `GET /api/agents` shows the avatar after the sync.
 5. **Validate the manifest** from an ai-space checkout before deploying, so a rejected app never reaches the host:
 
    ```bash
@@ -125,7 +125,7 @@ The manifest lives in the repository. Change it there, commit, deploy, sync; nev
 | --- | --- | --- |
 | identity (`title`, `description`, `icon`, `url`, `repo`) | edit the top level | sync; tile appears only with `url` |
 | `service` | change command, port (check `GET /api/services` for clashes), health | reinstall the unit if the command or port changed; restart; sync |
-| add or change an agent | `agents/<name>.md` + the `agents:` entry (`name`, `description`, `prompt`, `tools`, optional `avatar`, `model`, `skills`) | sync; `GET /api/agents` lists it; open one chat turn to prove the prompt and tool list |
+| add or change an agent | `agents/<name>.md` + `agents/<name>.svg` + the `agents:` entry (`name`, `title`, `description`, `prompt`, `tools`, `avatar`, optional `model`, `skills`) | sync; `GET /api/agents` lists it with its avatar; open one chat turn to prove the prompt and tool list |
 | add or change a widget | endpoint in the service + the `widgets:` entry (`source`, `link`, `size`, `refresh` ≥ 15s) | sync; `GET /api/widgets` shows its payload or its error |
 | add or change a task | one of `at` / `every` / `schedule` and/or `triggers: [{ event: <app>/<event>, filter, debounce }]`, one of `run.http` / `run.command` / `run.agent`, a `timeout`, optional `notify: { when: [error], channel }` | sync; `GET /api/tasks` shows the effective schedule and triggers; `POST /api/tasks/:id/run` with the token proves the target, `POST /api/events` with the publisher's `SPACE_APP_TOKEN` proves a trigger |
 | storage | `database`, `databases: [...]`, `blobs` | sync provisions and rewrites `space.env`; restart the service so it reads the new variables; nothing is ever dropped by a manifest change |
@@ -164,3 +164,4 @@ Then record what went live in the app's `AGENTS.md` (host, port, unit, deploy co
 - Task cron expressions live only in `space.yaml`; anything left in a crontab runs twice.
 - Deleting an app directory does not delete `<workspace>/data/<name>/`; that is a separate, confirmed step.
 - Bare `Bash` in an agent's `tools` is a shell for anyone who can reach the panel. Use `Bash(cmd *)` patterns.
+- An agent without `avatar` shows the app icon on the panel; an app that was shipped that way (portfolio, 2026-09-08) had to be patched afterwards. Add the avatar together with the prompt file.

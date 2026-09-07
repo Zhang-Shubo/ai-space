@@ -28,6 +28,7 @@ agents:
   - name: assistant
     title: Assistant
     description: Answers questions about this app and its data.
+    avatar: agents/assistant.svg   # required by the procedure: 64x64 rounded square (or an emoji); the app icon is the fallback
     prompt: agents/assistant.md
     tools: [Read, Grep, Glob, Bash(bun *)]
 
