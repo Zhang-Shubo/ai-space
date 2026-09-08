@@ -69,8 +69,11 @@ See [docs/app-spec.md](docs/app-spec.md) for the app specification (what an app 
 
 ## Status
 
-Early stage. Scheduler, storage, notifications, the panel (with agent chat and widgets) and peers (one panel over several machines, [docs/peers.md](docs/peers.md)) are in place. Follow-up work, roughly in order:
+Early stage. Scheduler (schedules and event triggers), storage (databases and blob hand-over), backups, notifications, the panel (agent chat, widgets, add from link, uninstall), peers (one panel over several machines, [docs/peers.md](docs/peers.md)) and the interactive `setup` are in place. Follow-up work, roughly in order:
 
-- **Service supervision** - start `service.command`, restart it on failure, collect its logs under `<workspace>/logs/<app>/`; the panel probes health directly until then.
-- **Skills mounting** - make `skills:` from the manifest available to agent sessions.
-- **Managed blob API and backups** - the parts of the storage design that are not implemented yet.
+- **Service supervision** - start `service.command`, restart it on failure, collect its logs under `<workspace>/logs/<app>/`; until then services are systemd units the operator installs, and the panel probes health directly.
+- **Skills mounting** - make `skills:` and `memory:` from the manifest available to agent sessions; both are parsed today.
+- **Managed blob API** - index table, streaming routes and presigning on top of the blob stores that are already provisioned and handed over.
+- **App tooling** - `schema/space.schema.json`, `validate`, `/api/spec` and `bun run new-app`; the shared skill `skills/space-app/` does this by hand today.
+
+The per-area table is in [docs/app-spec.md](docs/app-spec.md#implementation-status).
