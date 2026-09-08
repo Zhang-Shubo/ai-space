@@ -166,4 +166,5 @@ First app, when one was added:
 | Bun installer fails on unzip | `unzip` not installed | `apt-get install -y unzip` |
 | `systemctl --user` says no bus | no user session (came in via `su`) | `export XDG_RUNTIME_DIR=/run/user/$(id -u)` or log in over SSH as the user |
 | `/healthz` never answers after `install.sh` | the unit failed | `journalctl --user -u ai-space -n 50`; usually a bad `.env` line |
+| Chat says `Executable not found in $PATH: "claude"` | the unit predates the `PATH=` line in `deploy/ai-space.service` (systemd ignores the login shell's PATH) | reinstall the unit with `deploy/install.sh`, or set `SPACE_CHAT_BIN=/full/path/to/claude` in `~/.ai-space/.env`; app services that call `claude` themselves need the full path in their own `.env` |
 | Panel opens without a login page | hostname created before the Access application | remove the hostname, create Access, add it again |

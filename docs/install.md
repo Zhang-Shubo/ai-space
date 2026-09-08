@@ -85,7 +85,7 @@ claude                                              # first run: pick a theme, t
 Login on a headless machine: `/login` prints a URL; open it on your laptop, sign in, paste the code back into the terminal. The token is stored under `~/.claude/` (no keychain on Linux) and refreshes itself. Two alternatives:
 
 - An API key instead of a subscription login: put `ANTHROPIC_API_KEY=...` in `~/.ai-space/.env`; ai-space loads that file into its environment and the spawned `claude` inherits it.
-- A different binary or wrapper: `SPACE_CHAT_BIN=/path/to/claude` in the same file.
+- A different binary or wrapper: `SPACE_CHAT_BIN=/path/to/claude` in the same file. The unit puts `~/.bun/bin` and `~/.local/bin` on PATH, so the two usual install locations need no override.
 
 Then check the exact call ai-space makes, from a directory that will exist (the workspace root, created in step 4, or `/tmp` for now):
 

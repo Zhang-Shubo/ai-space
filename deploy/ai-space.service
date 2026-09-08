@@ -9,6 +9,9 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=%h/.ai-space/core
 Environment=SPACE_HOME=%h/.ai-space
+# systemd does not read the login shell's PATH; ~/.bun/bin (bun, and claude when
+# installed with `bun add -g`) and ~/.local/bin (the native claude installer) go first.
+Environment=PATH=%h/.bun/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/.bun/bin/bun src/index.ts
 Restart=on-failure
 RestartSec=5
