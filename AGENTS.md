@@ -51,7 +51,7 @@ English is the default language of this repository. Write code identifiers, comm
 - `tsconfig.json` - TypeScript configuration (strict, bundler mode, noEmit).
 - `AGENTS.md` - this file, the agent working guide.
 - `CLAUDE.md` - Bun usage conventions.
-- `deploy/` - `ai-space.service` (user-level systemd unit), `install.sh` (installs the unit on a machine), `post-receive` (bare-repo hook for git-push deploys), `bootstrap.sh` (the `curl | bash` one-line install: runtimes, clone, install.sh, setup).
+- `deploy/` - `ai-space.service` (user-level systemd unit), `install.sh` (installs the unit on a machine), `post-receive` (bare-repo hook for git-push deploys).
 - `.env.example` - configuration template for `~/.ai-space/.env`.
 - `.gitignore` - global ignore rules.
 

@@ -17,30 +17,13 @@ The order matters: each step only needs what the steps before it produced.
 | 9. Peers | `SPACE_NAME`, `SPACE_HUB_TOKEN` or `SPACE_PEER_*` | only with a second machine |
 | 10. First app and checks | a tile, a chat, a task run | done |
 
-## The one-line way
-
-`deploy/bootstrap.sh` does steps 1 (the user's part), 2, 4 and the interactive `setup` in one go, as the user that will own ai-space:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/ai-space/main/deploy/bootstrap.sh | bash
-```
-
-It installs Bun and Claude Code when missing, clones the repository into `~/.ai-space/core` (or fast-forwards an existing clean checkout), runs `deploy/install.sh`, and then runs `bun run setup` reading from `/dev/tty`, so the questions work although stdin is curl's pipe. It is one function called on its last line, so a download cut short runs nothing. Variables: `AI_SPACE_REPO`, `AI_SPACE_REF` (default `main`), `SPACE_HOME`, `AI_SPACE_NO_SETUP=1`. Re-running it updates the checkout and re-runs setup with the current values as defaults.
-
-What it cannot do, and step 1 still covers: the root part (create the user, packages, time zone, swap, firewall), and anything needing sudo later (the `gh` package, step 3). The Claude login (step 2), the tunnel and Access (steps 5 and 6) are done after it, following the hints setup prints.
-
-**Serving it from your own domain.** The raw GitHub URL works for a public repository. To get `curl -fsSL https://<your-domain>/install.sh | bash`:
-
-- Public repository: a Cloudflare redirect rule (Rules → Redirect Rules) from `https://get.<your-domain>/install.sh` to the raw GitHub URL, 302; `curl -L` (the `L` in `-fsSL`) follows it.
-- Private repository: the raw URL needs a token, so publish the script itself somewhere public instead, either an R2 bucket with a custom domain (`wrangler r2 object put <bucket>/install.sh --file deploy/bootstrap.sh`, or the dashboard upload) or a Cloudflare Pages project holding the one file. Give the clone a token: `curl -fsSL https://<your-domain>/install.sh | AI_SPACE_GIT_TOKEN=<fine-grained token, contents read> bash`. Without the variable the script uses the token of a logged-in `gh` when there is one. The token is used for the clone only and not stored; later fetches go through `gh auth setup-git` from step 3.
-
 ## Letting an agent install it
 
 The steps below are written for a person, but a coding agent with a shell (Claude Code, Codex, or any similar tool) follows them just as well, and it is the way to go when you would rather answer questions than type commands. The agent reads this file, does the commands, and reports where it stopped. Two shapes, depending on where the agent runs.
 
 **The agent runs on your machine, the server is remote.** Open the agent in a checkout of this repository, make sure `ssh <host>` works from a terminal (a host alias in `~/.ssh/config` is enough), and ask:
 
-> Install ai-space on `<host>` following docs/install.md. Do the root part of step 1 with sudo, run deploy/bootstrap.sh as the user that will own ai-space, and stop at every step that needs a login in a browser and tell me what to do.
+> Install ai-space on `<host>` following docs/install.md. Do the root part of step 1 with sudo and the rest as the user that will own ai-space; stop at every step that needs a login in a browser and tell me what to do.
 
 It runs steps 1 to 4 over SSH and comes back with the browser logins of steps 2, 3 and 5 (a URL and a code each, which it can relay) and the Access application of step 6. Steps 7 to 10 need values from you (bucket credentials, a webhook URL); give them in the terminal when it asks, they end up in the workspace `.env` and nowhere else.
 
@@ -56,6 +39,8 @@ cd ~/.ai-space/core && claude        # or: codex
 Starting it inside the checkout matters: the agent reads `AGENTS.md` and the docs directly and runs `deploy/install.sh` from where they are. For Claude Code the login it needs to run is the same one step 2 asks for, so that is done once.
 
 In both shapes, `bun run setup` is interactive and made for a terminal; an agent fills `~/.ai-space/.env` from `.env.example` instead (`deploy/install.sh` creates the file), restarts the unit, and runs the checks of step 10. Ask it to show you the `.env` values it chose before it writes them.
+
+There is no `curl | bash` installer on purpose: ai-space is only useful with a coding agent, so the agent is the installer.
 
 Secrets end up in exactly two places: the workspace `.env` (`~/.ai-space/.env`, read by ai-space and by `${VAR}` in manifests) and the tools' own stores (`~/.claude`, `~/.config/gh`, `~/.cloudflared`). Nothing is committed.
 

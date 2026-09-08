@@ -42,15 +42,7 @@ Local configuration goes in `~/.ai-space/.env` (see `.env.example`); process env
 
 ## Deployment
 
-One line on a fresh machine, as the user that will own ai-space (installs Bun and Claude Code, clones into `~/.ai-space/core`, installs the unit, then runs the interactive setup on the terminal):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/ai-space/main/deploy/bootstrap.sh | bash
-```
-
-For a private repository, host `deploy/bootstrap.sh` on a URL of your own and pass a token: `curl -fsSL https://<your-domain>/install.sh | AI_SPACE_GIT_TOKEN=<token> bash`. See [docs/install.md](docs/install.md).
-
-Or hand the procedure to a coding agent (Claude Code, Codex): from a checkout on your machine, ask it to install ai-space on `<host>` following `docs/install.md`; or on the server, clone into `~/.ai-space/core`, start the agent inside that directory, and ask it to install ai-space on this machine. It stops at the browser logins and tells you what to do. See [docs/install.md](docs/install.md#letting-an-agent-install-it).
+Hand the procedure to a coding agent (Claude Code, Codex): from a checkout on your machine, ask it to install ai-space on `<host>` following `docs/install.md`; or on the server, clone into `~/.ai-space/core`, start the agent inside that directory, and ask it to install ai-space on this machine. It stops at the browser logins and tells you what to do. See [docs/install.md](docs/install.md#letting-an-agent-install-it).
 
 By hand: user-level systemd, no sudo. On the target machine, with Bun installed under `~/.bun`:
 
