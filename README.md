@@ -1,6 +1,14 @@
 # ai-space
 
-A personal AI space: one web entry, many apps, each app run by one or more AI agents, all sharing a common set of services on a single dedicated server.
+A home for your AI: one place that connects and organizes several AI agents, apps and their data into a single system on a dedicated server.
+
+It is one entry for all of it. Instead of switching between AI tools, you use and manage your own AI system through one web interface made of three things:
+
+- **Apps** hold structured information and the scenarios you work in, and give the AI lasting context.
+- **Agents** take on complex, unstructured requests and carry out the work.
+- **Widgets** keep the important state and results visible at a glance.
+
+Underneath, ai-space puts apps, agents, widgets, skills and data into one system instead of a set of separate tools: they share context and data, call each other's abilities, hand over tasks and results, and keep working towards the goals you set. The core supplies what a running AI system needs: scheduled tasks that fire on a clock or on events, notifications when a task finishes or turns up something important, backups of the data and results, storage, and one panel over several machines.
 
 ## Architecture
 
