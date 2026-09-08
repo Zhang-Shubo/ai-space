@@ -10,7 +10,7 @@ If you were started inside a checkout on a machine where ai-space is not install
 
 ## Language
 
-English is the default language of this repository. Write code identifiers, comments, documentation, commit messages, issues, and PR descriptions in English.
+English is the default language of this repository. Write code identifiers, comments, documentation, commit messages, issues, and PR descriptions in English. The one translation is `README.zh-CN.md`, a Chinese mirror of `README.md`: when you change the README, change both.
 
 ## Work Style
 

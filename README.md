@@ -1,5 +1,7 @@
 # ai-space
 
+English | [中文](README.zh-CN.md)
+
 A home for your AI: one place that connects and organizes several AI agents, apps and their data into a single system on a dedicated server.
 
 It is one entry for all of it. Instead of switching between AI tools, you use and manage your own AI system through one web interface made of three things:
