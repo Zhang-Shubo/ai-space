@@ -50,7 +50,7 @@ Local configuration goes in `~/.ai-space/.env` (see `.env.example`); process env
 
 ## Deployment
 
-Hand the procedure to a coding agent (Claude Code, Codex): from a checkout on your machine, ask it to install ai-space on `<host>` following `docs/install.md`; or on the server, clone into `~/.ai-space/core`, start the agent inside that directory, and ask it to install ai-space on this machine. It stops at the browser logins and tells you what to do. See [docs/install.md](docs/install.md#letting-an-agent-install-it).
+Hand the procedure to a coding agent (Claude Code, Codex): from a checkout on your machine, ask it to install ai-space on `<host>` following `docs/install-by-agent.md`; or on the server, clone into `~/.ai-space/core`, start the agent inside that directory, and ask it to install ai-space on this machine. It stops at the browser logins and tells you what to do. See [docs/install-by-agent.md](docs/install-by-agent.md) and [docs/install.md](docs/install.md).
 
 By hand: user-level systemd, no sudo. On the target machine, with Bun installed under `~/.bun`:
 

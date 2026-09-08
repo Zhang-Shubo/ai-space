@@ -6,7 +6,7 @@ This guide is for AI coding agents working in the ai-space repository. Read it b
 
 ai-space is a workspace for AI-related experiments and tools, written in TypeScript and run with Bun. Bun handles dependency installation, running, testing, and building. The project is at an early stage; the directory layout will evolve as modules are added. Update the Repository Map below whenever you add a directory.
 
-If you were started inside a checkout on a machine where ai-space is not installed yet, or asked to install it on another machine, the procedure is [docs/install.md](docs/install.md), section "Letting an agent install it".
+If you were started inside a checkout on a machine where ai-space is not installed yet, or asked to install it on another machine, follow [docs/install-by-agent.md](docs/install-by-agent.md); [docs/install.md](docs/install.md) is the reference it points into.
 
 ## Language
 
@@ -46,7 +46,7 @@ English is the default language of this repository. Write code identifiers, comm
 - `src/space/agents/` - chat with agents: `runtime.ts` (claude process, stream-json to SSE), `sessions.ts` (recent sessions), `transcript.ts` (restore from the CLI's transcripts), `api.ts` (HTTP routes and the space agent).
 - `src/web/` - the web UI, bundled by Bun's HTML import: `index.html`, `main.tsx` (root: owns the page language), `App.tsx` (launcher), `Chat.tsx` (chat panel), `Tasks.tsx` (scheduled tasks panel), `Pet.tsx` (desk pet), `petdex.ts` (pet lookup on petdex.dev), `i18n.ts` (English and Chinese dictionaries, language detection, `useLang`, `localized` for manifest text), `styles.css`, `api.ts` (client types, time helpers that take the language), `routes.ts` (page and public files), `public/` (PWA shell, pet sprite, settings icon). `bun run dev` serves it with hot reload. Every user-visible string goes through `t()`; add the key to both dictionaries (design in `docs/i18n.md`).
 - `data/` - runtime data (SQLite), ignored by git.
-- `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README. Service designs: `scheduler.md`, `storage.md`, `backup.md` (snapshots, retention, verify, restore), `notify.md` (chat notifications, design only), `panel.md` (web UI, chat, widgets), `peers.md` (one panel over several machines), `i18n.md` (languages of the panel and the manifest's `i18n:` section), `app-spec.md` (the app contract), and `install.md` (first install on a server).
+- `docs/` - project documentation and diagrams. `docs/architecture.svg` is the architecture figure used in the README. Service designs: `scheduler.md`, `storage.md`, `backup.md` (snapshots, retention, verify, restore), `notify.md` (chat notifications, design only), `panel.md` (web UI, chat, widgets), `peers.md` (one panel over several machines), `i18n.md` (languages of the panel and the manifest's `i18n:` section), `app-spec.md` (the app contract), `install.md` (first install on a server), and `install-by-agent.md` (the same install done by a coding agent: order, stops, checklist).
 - `package.json` - scripts and dependencies; `bun.lock` is the lockfile.
 - `tsconfig.json` - TypeScript configuration (strict, bundler mode, noEmit).
 - `AGENTS.md` - this file, the agent working guide.

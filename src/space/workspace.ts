@@ -1,4 +1,4 @@
-import { mkdir, readdir } from "node:fs/promises";
+import { chmod, mkdir, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { MANIFEST_FILE } from "./scheduler/manifest.ts";
@@ -68,6 +68,7 @@ export async function ensureWorkspace(home: string): Promise<{ ws: Workspace; cr
   }
   if (!(await Bun.file(ws.envFile).exists())) {
     await Bun.write(ws.envFile, ENV_TEMPLATE);
+    await chmod(ws.envFile, 0o600); // it will hold secrets; Bun.write follows the umask
     created.push(ws.envFile);
   }
   return { ws, created };

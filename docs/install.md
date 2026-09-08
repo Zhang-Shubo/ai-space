@@ -19,11 +19,11 @@ The order matters: each step only needs what the steps before it produced.
 
 ## Letting an agent install it
 
-The steps below are written for a person, but a coding agent with a shell (Claude Code, Codex, or any similar tool) follows them just as well, and it is the way to go when you would rather answer questions than type commands. The agent reads this file, does the commands, and reports where it stopped. Two shapes, depending on where the agent runs.
+The steps below are written for a person, but a coding agent with a shell (Claude Code, Codex, or any similar tool) follows them just as well, and it is the way to go when you would rather answer questions than type commands. The agent's own procedure, with the questions to ask, the stops and a checklist, is [install-by-agent.md](install-by-agent.md); this file stays the reference it points into. Two shapes, depending on where the agent runs.
 
 **The agent runs on your machine, the server is remote.** Open the agent in a checkout of this repository, make sure `ssh <host>` works from a terminal (a host alias in `~/.ssh/config` is enough), and ask:
 
-> Install ai-space on `<host>` following docs/install.md. Do the root part of step 1 with sudo and the rest as the user that will own ai-space; stop at every step that needs a login in a browser and tell me what to do.
+> Install ai-space on `<host>` following docs/install-by-agent.md. Do the root part of step 1 with sudo and the rest as the user that will own ai-space; stop at every step that needs a login in a browser and tell me what to do.
 
 It runs steps 1 to 4 over SSH and comes back with the browser logins of steps 2, 3 and 5 (a URL and a code each, which it can relay) and the Access application of step 6. Steps 7 to 10 need values from you (bucket credentials, a webhook URL); give them in the terminal when it asks, they end up in the workspace `.env` and nowhere else.
 
@@ -34,7 +34,7 @@ git clone https://github.com/<owner>/ai-space.git ~/.ai-space/core
 cd ~/.ai-space/core && claude        # or: codex
 ```
 
-> Install ai-space on this machine following docs/install.md; this directory is the checkout.
+> Install ai-space on this machine following docs/install-by-agent.md; this directory is the checkout.
 
 Starting it inside the checkout matters: the agent reads `AGENTS.md` and the docs directly and runs `deploy/install.sh` from where they are. For Claude Code the login it needs to run is the same one step 2 asks for, so that is done once.
 

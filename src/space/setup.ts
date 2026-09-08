@@ -1,3 +1,4 @@
+import { chmod } from "node:fs/promises";
 import { hostname } from "node:os";
 import { createInterface } from "node:readline";
 import { TRANSPORTS, parseChannelUrl } from "./notify/index.ts";
@@ -355,6 +356,7 @@ export async function runSetup(d: SetupDeps): Promise<SetupOutcome> {
       const file = Bun.file(d.ws.envFile);
       const text = (await file.exists()) ? await file.text() : "";
       await Bun.write(d.ws.envFile, updateEnvText(text, updates));
+      await chmod(d.ws.envFile, 0o600);
       io.say("  written.");
     } else {
       io.say("  not written.");
