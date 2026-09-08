@@ -50,6 +50,8 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/ai-space/main/deploy/bootst
 
 For a private repository, host `deploy/bootstrap.sh` on a URL of your own and pass a token: `curl -fsSL https://<your-domain>/install.sh | AI_SPACE_GIT_TOKEN=<token> bash`. See [docs/install.md](docs/install.md).
 
+Or hand the procedure to a coding agent (Claude Code, Codex): from a checkout on your machine, ask it to install ai-space on `<host>` following `docs/install.md`; or on the server, clone into `~/.ai-space/core`, start the agent inside that directory, and ask it to install ai-space on this machine. It stops at the browser logins and tells you what to do. See [docs/install.md](docs/install.md#letting-an-agent-install-it).
+
 By hand: user-level systemd, no sudo. On the target machine, with Bun installed under `~/.bun`:
 
 ```bash

@@ -6,6 +6,8 @@ This guide is for AI coding agents working in the ai-space repository. Read it b
 
 ai-space is a workspace for AI-related experiments and tools, written in TypeScript and run with Bun. Bun handles dependency installation, running, testing, and building. The project is at an early stage; the directory layout will evolve as modules are added. Update the Repository Map below whenever you add a directory.
 
+If you were started inside a checkout on a machine where ai-space is not installed yet, or asked to install it on another machine, the procedure is [docs/install.md](docs/install.md), section "Letting an agent install it".
+
 ## Language
 
 English is the default language of this repository. Write code identifiers, comments, documentation, commit messages, issues, and PR descriptions in English.
