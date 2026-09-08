@@ -17,6 +17,23 @@ The order matters: each step only needs what the steps before it produced.
 | 9. Peers | `SPACE_NAME`, `SPACE_HUB_TOKEN` or `SPACE_PEER_*` | only with a second machine |
 | 10. First app and checks | a tile, a chat, a task run | done |
 
+## The one-line way
+
+`deploy/bootstrap.sh` does steps 1 (the user's part), 2, 4 and the interactive `setup` in one go, as the user that will own ai-space:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/ai-space/main/deploy/bootstrap.sh | bash
+```
+
+It installs Bun and Claude Code when missing, clones the repository into `~/.ai-space/core` (or fast-forwards an existing clean checkout), runs `deploy/install.sh`, and then runs `bun run setup` reading from `/dev/tty`, so the questions work although stdin is curl's pipe. It is one function called on its last line, so a download cut short runs nothing. Variables: `AI_SPACE_REPO`, `AI_SPACE_REF` (default `main`), `SPACE_HOME`, `AI_SPACE_NO_SETUP=1`. Re-running it updates the checkout and re-runs setup with the current values as defaults.
+
+What it cannot do, and step 1 still covers: the root part (create the user, packages, time zone, swap, firewall), and anything needing sudo later (the `gh` package, step 3). The Claude login (step 2), the tunnel and Access (steps 5 and 6) are done after it, following the hints setup prints.
+
+**Serving it from your own domain.** The raw GitHub URL works for a public repository. To get `curl -fsSL https://<your-domain>/install.sh | bash`:
+
+- Public repository: a Cloudflare redirect rule (Rules → Redirect Rules) from `https://get.<your-domain>/install.sh` to the raw GitHub URL, 302; `curl -L` (the `L` in `-fsSL`) follows it.
+- Private repository: the raw URL needs a token, so publish the script itself somewhere public instead, either an R2 bucket with a custom domain (`wrangler r2 object put <bucket>/install.sh --file deploy/bootstrap.sh`, or the dashboard upload) or a Cloudflare Pages project holding the one file. Give the clone a token: `curl -fsSL https://<your-domain>/install.sh | AI_SPACE_GIT_TOKEN=<fine-grained token, contents read> bash`. Without the variable the script uses the token of a logged-in `gh` when there is one. The token is used for the clone only and not stored; later fetches go through `gh auth setup-git` from step 3.
+
 Secrets end up in exactly two places: the workspace `.env` (`~/.ai-space/.env`, read by ai-space and by `${VAR}` in manifests) and the tools' own stores (`~/.claude`, `~/.config/gh`, `~/.cloudflared`). Nothing is committed.
 
 ## 1. Server user and base tools

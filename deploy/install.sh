@@ -17,7 +17,14 @@ loginctl enable-linger "$USER" 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user enable --now ai-space
 systemctl --user restart ai-space
-sleep 2
-systemctl --user --no-pager --lines=5 status ai-space || true
-curl -fsS "http://127.0.0.1:${SPACE_PORT:-8700}/healthz" && echo
-grep -qE '^SPACE_API_TOKEN=.+' "${SPACE_HOME:-$HOME/.ai-space}/.env" || echo "next: $BUN src/index.ts setup   (fills ${SPACE_HOME:-$HOME/.ai-space}/.env interactively; see docs/install.md)"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  sleep 2
+  if curl -fsS "http://127.0.0.1:${SPACE_PORT:-8700}/healthz"; then
+    echo
+    grep -qE '^SPACE_API_TOKEN=.+' "${SPACE_HOME:-$HOME/.ai-space}/.env" || echo "next: $BUN src/index.ts setup   (fills ${SPACE_HOME:-$HOME/.ai-space}/.env interactively; see docs/install.md)"
+    exit 0
+  fi
+done
+systemctl --user --no-pager --lines=10 status ai-space || true
+echo "ai-space is not answering on 127.0.0.1:${SPACE_PORT:-8700}; see: journalctl --user -u ai-space -n 50" >&2
+exit 1
