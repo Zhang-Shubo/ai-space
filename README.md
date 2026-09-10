@@ -50,6 +50,18 @@ bun run check          # typecheck + tests
 
 Local configuration goes in `~/.ai-space/.env` (see `.env.example`); process environment variables win over it.
 
+## What you need
+
+Five things, in the order you will use them. The first two are required; the rest make the result usable from anywhere and safe to keep.
+
+1. **A coding agent.** [Claude Code](https://claude.com/claude-code), Codex, or any similar tool with a shell. It installs ai-space, it is the runtime the agents behind the panel run as, and it is how you build and maintain your apps. Bring its login: a Claude subscription or an API key.
+2. **A cloud server.** One Linux box (Debian or Ubuntu, systemd, SSH with a key) that stays on. 1 vCPU and 2 GB RAM run the core with swap; 2 vCPU and 4 GB are comfortable once several apps and agent sessions run at the same time (each session costs about 150 MB).
+3. **A Cloudflare account**, free tier. Tunnel publishes the panel and apps on your domain with no open port on the server, and can carry SSH too; Access puts a login in front of them; R2 (10 GB free) holds backups and app files. Without it the panel stays on loopback, reachable through an SSH port forward, and backups need another S3 bucket.
+4. **GitHub CLI** (`gh`), logged in on the server, so the agent clones, commits and pushes app repositories for you with one login and no deploy keys.
+5. **A domain hosted on Cloudflare.** Nameservers at Cloudflare, one hostname per app (`space.example.com` for the panel). This is what 3 publishes to.
+
+The install walks through each of them in this order: [docs/install.md](docs/install.md).
+
 ## Deployment
 
 Hand the procedure to a coding agent (Claude Code, Codex): from a checkout on your machine, ask it to install ai-space on `<host>` following `docs/install-by-agent.md`; or on the server, clone into `~/.ai-space/core`, start the agent inside that directory, and ask it to install ai-space on this machine. It stops at the browser logins and tells you what to do. See [docs/install-by-agent.md](docs/install-by-agent.md) and [docs/install.md](docs/install.md).

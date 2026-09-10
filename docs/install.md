@@ -2,6 +2,8 @@
 
 How to bring ai-space up on a fresh Linux machine, from an empty user account to a panel reachable on a domain behind an access layer, with agents, storage, notifications and app deploys working. Everything runs as one non-root user; sudo is needed only for the few system packages named below.
 
+What to have before starting is summarised in the README under [What you need](../README.md#what-you-need): a coding agent, a Linux server, a Cloudflare account, GitHub CLI and a domain on Cloudflare.
+
 The order matters: each step only needs what the steps before it produced.
 
 | Step | What it produces | Needed by |

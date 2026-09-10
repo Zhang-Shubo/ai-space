@@ -50,6 +50,18 @@ bun run check          # 类型检查 + 测试
 
 本地配置放在 `~/.ai-space/.env`（见 `.env.example`）；进程环境变量优先于它。
 
+## 运行前提
+
+五样东西，按使用顺序排列。前两项必须有，其余的让结果随处可用、可以长期保留。
+
+1. **一个 coding agent。** [Claude Code](https://claude.com/claude-code)、Codex 或任何类似的带 shell 的工具。它负责安装 ai-space，是面板背后 agent 的运行时，也是你构建和维护 app 的方式。带上它的登录：Claude 订阅或一个 API key。
+2. **一台云主机。** 一台常开的 Linux 机器（Debian 或 Ubuntu，systemd，密钥 SSH）。1 核 2G 加 swap 能跑核心；2 核 4G 在多个 app 和 agent 会话同时运行时体验更好（每个会话约占 150 MB）。
+3. **一个 Cloudflare 账号**，免费套餐即可。Tunnel 把面板和 app 发布到你的域名上，服务器不开任何端口，还能顺带承载 SSH；Access 在它们前面加一层登录；R2（免费 10 GB）存备份和 app 文件。没有它，面板只在本机回环地址上，通过 SSH 端口转发访问，备份需要另找一个 S3 桶。
+4. **GitHub CLI**（`gh`），在服务器上登录，让 agent 替你 clone、提交和推送 app 仓库，一次登录，不用逐个仓库配 deploy key。
+5. **一个托管在 Cloudflare 的域名。** DNS 解析在 Cloudflare，每个 app 一个主机名（面板用 `space.example.com`）。第 3 项发布到的就是它。
+
+安装过程按这个顺序逐项进行：[docs/install.md](docs/install.md)。
+
 ## 部署
 
 把整个流程交给一个 coding agent（Claude Code、Codex）：在你本机的 checkout 里，让它按 `docs/install-by-agent.md` 把 ai-space 装到 `<host>` 上；或者在服务器上 clone 到 `~/.ai-space/core`，在该目录里启动 agent，让它按同一份文档装这台机器。遇到需要浏览器登录的步骤它会停下来告诉你怎么做。见 [docs/install-by-agent.md](docs/install-by-agent.md) 和 [docs/install.md](docs/install.md)。
